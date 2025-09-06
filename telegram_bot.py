@@ -294,14 +294,6 @@ def update_user_structure(user_data, user_id):
         user_data["subscriptions_bought"] = 0
     if "total_spent" not in user_data:
         user_data["total_spent"] = 0.0
-    if "referrals" not in user_data:
-        user_data["referrals"] = []
-    if "referral_earnings" not in user_data:
-        user_data["referral_earnings"] = 0.0
-    if "referral_withdrawn" not in user_data:
-        user_data["referral_withdrawn"] = 0.0
-    if "referral_code" not in user_data:
-        user_data["referral_code"] = f"ref_{user_id}"
     if "purchases" not in user_data:
         user_data["purchases"] = []
     
@@ -412,10 +404,6 @@ def start(message: Message):
             "stars_bought": 0,
             "subscriptions_bought": 0,
             "total_spent": 0.0,
-            "referrals": [],
-            "referral_earnings": 0.0,
-            "referral_withdrawn": 0.0,
-            "referral_code": f"ref_{user_id}",
             "purchases": []
         }
         save_users_data(users_data)
@@ -434,7 +422,7 @@ def start(message: Message):
     user_balance = user_data.get('balance', 0)
     
     # Подсчитываем общее количество купленных звезд
-    total_stars = sum(user.get('stars_bought', 0) for user in users_data.values())
+    total_stars = 13430 + sum(user.get('stars_bought', 0) for user in users_data.values()) #для хайпа немного приврём
     total_rub = total_stars * STAR_PRICE
     
     welcome_text = (
@@ -563,11 +551,7 @@ def handle_callback(call: CallbackQuery):
             f"👤 Профиль @{user_data.get('username', 'Unknown')}\n\n"
             f"💰 Баланс: {user_data.get('balance', 0):.2f} ₽\n"
             f"⭐️ Куплено звезд: {user_data.get('stars_bought', 0)}\n"
-            f"💸 Всего потрачено: {user_data.get('total_spent', 0):.2f} ₽\n"
-            f"👥 Рефералов: {len(user_data.get('referrals', []))}\n"
-            f"🎁 Реферальные начисления: {user_data.get('referral_earnings', 0):.2f} ₽\n"
-            f"📤 Выведено: {user_data.get('referral_withdrawn', 0):.2f} ₽\n"
-            f"🔗 Реферальный код: {user_data.get('referral_code', 'ref_' + user_id)}"
+            f"💸 Всего потрачено: {user_data.get('total_spent', 0):.2f} ₽"
         )
         
         # Отправляем изображение ава.jpeg с информацией профиля
@@ -1079,8 +1063,8 @@ def handle_callback(call: CallbackQuery):
                         f"💰 Сумма: {amount:.2f} ₽\n"
                         f"🆔 ID заказа: {order_id}\n\n"
                         f"💸 Сумма к отправке: {ton_amount:.4f} TON\n"
-                        f"💳 Адрес для оплаты: {wallet_address}\n"
-                        f"⚠️ Комментарий: {comment}\n\n"
+                        f"💳 Адрес для оплаты: `{wallet_address}`\n"
+                        f"⚠️ Комментарий: `{comment}`\n\n"
                         f"‼️ Обязательно указывайте комментарий при отправке монет!\n\n"
                         f"Попробуйте проверить еще раз через несколько минут."
                     )
@@ -1108,8 +1092,8 @@ def handle_callback(call: CallbackQuery):
                         f"💰 Сумма: {amount:.2f} ₽\n"
                         f"🆔 ID заказа: {order_id}\n\n"
                         f"💸 Сумма к отправке: {ton_amount:.4f} TON\n"
-                        f"💳 Адрес для оплаты: {wallet_address}\n"
-                        f"⚠️ Комментарий: {comment}\n\n"
+                        f"💳 Адрес для оплаты: `{wallet_address}`\n"
+                        f"⚠️ Комментарий: `{comment}`\n\n"
                         f"‼️ Обязательно указывайте комментарий при отправке монет!\n\n"
                         f"Убедитесь, что вы отправили правильную сумму на указанный адрес."
                     )
@@ -1140,8 +1124,8 @@ def handle_callback(call: CallbackQuery):
                     f"💰 Сумма: {amount:.2f} ₽\n"
                     f"🆔 ID заказа: {order_id}\n\n"
                     f"💸 Сумма к отправке: {ton_amount:.4f} TON\n"
-                    f"💳 Адрес для оплаты: {wallet_address}\n"
-                    f"⚠️ Комментарий: {comment}\n\n"
+                    f"💳 Адрес для оплаты: `{wallet_address}`\n"
+                    f"⚠️ Комментарий: `{comment}`\n\n"
                     f"‼️ Обязательно указывайте комментарий при отправке монет!"
                 )
                 

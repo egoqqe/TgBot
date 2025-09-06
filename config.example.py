@@ -84,7 +84,6 @@ EMOJIS = {
     "payment": "💸",
     "subscription": "📱",
     "vip": "👑",
-    "referral": "👥",
     "earnings": "💵",
     "withdrawn": "📥",
     "history": "📋",
