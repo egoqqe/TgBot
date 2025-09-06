@@ -140,6 +140,13 @@ created_wallets/
 bot.log
 error.log
 
+# Fragment API cookies (конфиденциально!)
+cookies.json
+
+# Keep example files
+!config.example.py
+!cookies.example.json
+
 # IDE files
 .vscode/
 .idea/
