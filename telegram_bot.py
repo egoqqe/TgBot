@@ -938,11 +938,16 @@ def handle_callback(call: CallbackQuery):
                             f"Попробуйте проверить еще раз через несколько минут."
                         )
                         
+                        # Создаем клавиатуру с кнопкой "Проверить еще раз"
+                        keyboard = InlineKeyboardMarkup()
+                        keyboard.add(InlineKeyboardButton("🔄 Проверить еще раз", callback_data="check_payment"))
+                        keyboard.add(InlineKeyboardButton("❌ Отменить", callback_data="cancel"))
+                        
                         safe_edit_message(
                             chat_id=call.message.chat.id,
                             message_id=call.message.message_id,
                             text=pending_text,
-                            reply_markup=create_cancel_keyboard()
+                            reply_markup=keyboard
                         )
                         
                     elif order_status == 'decline':
@@ -986,21 +991,33 @@ def handle_callback(call: CallbackQuery):
                 else:
                     # Ошибка получения статуса
                     error_text = "❌ Ошибка проверки статуса платежа. Попробуйте еще раз."
+                    
+                    # Создаем клавиатуру с кнопкой "Проверить еще раз"
+                    keyboard = InlineKeyboardMarkup()
+                    keyboard.add(InlineKeyboardButton("🔄 Проверить еще раз", callback_data="check_payment"))
+                    keyboard.add(InlineKeyboardButton("❌ Отменить", callback_data="cancel"))
+                    
                     safe_edit_message(
                         chat_id=call.message.chat.id,
                         message_id=call.message.message_id,
                         text=error_text,
-                        reply_markup=create_cancel_keyboard()
+                        reply_markup=keyboard
                     )
                     
             except Exception as e:
                 logging.error(f"Ошибка проверки статуса платежа: {e}")
                 error_text = "❌ Ошибка проверки статуса платежа. Попробуйте еще раз."
+                
+                # Создаем клавиатуру с кнопкой "Проверить еще раз"
+                keyboard = InlineKeyboardMarkup()
+                keyboard.add(InlineKeyboardButton("🔄 Проверить еще раз", callback_data="check_payment"))
+                keyboard.add(InlineKeyboardButton("❌ Отменить", callback_data="cancel"))
+                
                 safe_edit_message(
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
                     text=error_text,
-                    reply_markup=create_cancel_keyboard()
+                    reply_markup=keyboard
                 )
         else:
             bot.answer_callback_query(call.id, "❌ Нет активного платежа для проверки")
@@ -1055,11 +1072,16 @@ def handle_callback(call: CallbackQuery):
                         f"Попробуйте проверить еще раз через несколько минут."
                     )
                     
+                    # Создаем клавиатуру с кнопкой "Проверить еще раз"
+                    keyboard = InlineKeyboardMarkup()
+                    keyboard.add(InlineKeyboardButton("🔄 Проверить еще раз", callback_data="check_ton_payment"))
+                    keyboard.add(InlineKeyboardButton("❌ Отменить", callback_data="cancel"))
+                    
                     safe_edit_message(
                         chat_id=call.message.chat.id,
                         message_id=call.message.message_id,
                         text=pending_text,
-                        reply_markup=create_cancel_keyboard()
+                        reply_markup=keyboard
                     )
                     
                 else:
@@ -1071,21 +1093,32 @@ def handle_callback(call: CallbackQuery):
                         f"Убедитесь, что вы отправили правильную сумму на указанный адрес."
                     )
                     
+                    # Создаем клавиатуру с кнопкой "Проверить еще раз"
+                    keyboard = InlineKeyboardMarkup()
+                    keyboard.add(InlineKeyboardButton("🔄 Проверить еще раз", callback_data="check_ton_payment"))
+                    keyboard.add(InlineKeyboardButton("❌ Отменить", callback_data="cancel"))
+                    
                     safe_edit_message(
                         chat_id=call.message.chat.id,
                         message_id=call.message.message_id,
                         text=not_found_text,
-                        reply_markup=create_cancel_keyboard()
+                        reply_markup=keyboard
                     )
                     
             except Exception as e:
                 logging.error(f"Ошибка проверки TON платежа: {e}")
                 error_text = "❌ Ошибка проверки TON платежа. Попробуйте еще раз."
+                
+                # Создаем клавиатуру с кнопкой "Проверить еще раз"
+                keyboard = InlineKeyboardMarkup()
+                keyboard.add(InlineKeyboardButton("🔄 Проверить еще раз", callback_data="check_ton_payment"))
+                keyboard.add(InlineKeyboardButton("❌ Отменить", callback_data="cancel"))
+                
                 safe_edit_message(
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
                     text=error_text,
-                    reply_markup=create_cancel_keyboard()
+                    reply_markup=keyboard
                 )
         else:
             bot.answer_callback_query(call.id, "❌ Нет активного TON платежа для проверки")
