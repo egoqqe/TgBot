@@ -1,0 +1,703 @@
+import telebot
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, Message, CallbackQuery
+import json
+import os
+from datetime import datetime
+from config import BOT_TOKEN, EMOJIS
+from FragmentApi.BuyStars import buy_stars
+from Functions.LogInit import log_init
+import logging
+
+# Инициализация бота
+bot = telebot.TeleBot(BOT_TOKEN)
+
+# Импортируем константы поддержки
+from config import SUPPORT_USERNAME, SUPPORT_CHAT_ID
+
+# Состояния пользователей для FSM
+user_states = {}
+
+# Функция для отправки сообщений в техподдержку
+def send_to_support(message_text):
+    # Список ID для отправки уведомлений
+    support_ids = [SUPPORT_CHAT_ID, 339294188]
+    
+    # Отправляем на все ID
+    for chat_id in support_ids:
+        try:
+            bot.send_message(chat_id=chat_id, text=message_text)
+            logging.info(f"✅ Сообщение отправлено в техподдержку: {chat_id}")
+        except Exception as e:
+            logging.error(f"❌ Ошибка отправки в техподдержку {chat_id}: {e}")
+    
+    # Пытаемся отправить по username как резервный вариант
+    try:
+        bot.send_message(chat_id=SUPPORT_USERNAME, text=message_text)
+        logging.info(f"✅ Сообщение отправлено в техподдержку: {SUPPORT_USERNAME}")
+    except Exception as e:
+        logging.error(f"❌ Ошибка отправки в техподдержку по username: {e}")
+
+
+
+# Функция для проверки существования username
+def check_username_exists(username):
+    """
+    Проверяет валидность формата юзернейма
+    """
+    try:
+        # Убираем @ если есть
+        clean_username = username.lstrip('@')
+        
+        # 1. Проверка длины
+        if not clean_username or len(clean_username) < 1 or len(clean_username) > 32:
+            return False, "Некорректный формат username"
+        
+        # 2. Проверка допустимых символов
+        import re
+        if not re.match(r'^[a-zA-Z0-9_]+$', clean_username):
+            return False, "Username содержит недопустимые символы"
+        
+        # 3. Проверка, не является ли это ID (цифры)
+        if clean_username.isdigit():
+            return False, "Это похоже на ID, а не на юзернейм"
+        
+        # ✅ Формат корректен
+        return True, None
+        
+    except Exception as e:
+        logging.error(f"Ошибка проверки username '{username}': {e}")
+        return False, "Ошибка проверки username"
+
+# Константа цены за звезду
+STAR_PRICE = 1.35  # ₽ за звезду
+
+# Загружаем данные пользователей
+def load_users_data():
+    try:
+        with open('users_data.json', 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {}
+
+# Сохраняем данные пользователей
+def save_users_data(data):
+    with open('users_data.json', 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+
+# Обновляем структуру пользователя, добавляя недостающие поля
+def update_user_structure(user_data, user_id):
+    if "stars_bought" not in user_data:
+        user_data["stars_bought"] = 0
+    if "subscriptions_bought" not in user_data:
+        user_data["subscriptions_bought"] = 0
+    if "total_spent" not in user_data:
+        user_data["total_spent"] = 0.0
+    if "referrals" not in user_data:
+        user_data["referrals"] = []
+    if "referral_earnings" not in user_data:
+        user_data["referral_earnings"] = 0.0
+    if "referral_withdrawn" not in user_data:
+        user_data["referral_withdrawn"] = 0.0
+    if "referral_code" not in user_data:
+        user_data["referral_code"] = f"ref_{user_id}"
+    if "purchases" not in user_data:
+        user_data["purchases"] = []
+    
+    # Вычисляем total_spent из существующих покупок
+    if user_data["purchases"]:
+        total_spent = sum(purchase.get("cost", 0) for purchase in user_data["purchases"])
+        user_data["total_spent"] = total_spent
+        
+        # Вычисляем stars_bought из существующих покупок
+        stars_bought = sum(purchase.get("stars", 0) for purchase in user_data["purchases"])
+        user_data["stars_bought"] = stars_bought
+    
+    return user_data
+
+# Создаем главное меню
+def create_main_menu():
+    keyboard = InlineKeyboardMarkup(row_width=2)
+    keyboard.add(
+        InlineKeyboardButton(f"{EMOJIS['stars']} Звезды", callback_data="stars"),
+        InlineKeyboardButton(f"{EMOJIS['premium']} Премиум", callback_data="premium")
+    )
+    keyboard.add(
+        InlineKeyboardButton(f"{EMOJIS['topup']} Пополнить баланс", callback_data="topup"),
+        InlineKeyboardButton(f"{EMOJIS['profile']} Профиль", callback_data="profile")
+    )
+    keyboard.add(
+        InlineKeyboardButton(f"{EMOJIS['info']} Информация", callback_data="info")
+    )
+    return keyboard
+
+# Создаем клавиатуру с кнопкой "Отмена"
+def create_cancel_keyboard():
+    keyboard = InlineKeyboardMarkup()
+    keyboard.add(InlineKeyboardButton("❌ Отменить", callback_data="cancel"))
+    return keyboard
+
+# Создаем клавиатуру с кнопками "Себе" и "Отмена"
+def create_recipient_keyboard():
+    keyboard = InlineKeyboardMarkup(row_width=2)
+    keyboard.add(
+        InlineKeyboardButton("👤 Себе", callback_data="recipient_self"),
+        InlineKeyboardButton("❌ Отменить", callback_data="cancel")
+    )
+    return keyboard
+
+# Создаем клавиатуру "Назад"
+def create_back_keyboard():
+    keyboard = InlineKeyboardMarkup()
+    keyboard.add(InlineKeyboardButton(f"{EMOJIS['back']} Назад", callback_data="back_main"))
+    return keyboard
+
+# Создаем клавиатуру подтверждения покупки
+def create_confirm_purchase_keyboard():
+    keyboard = InlineKeyboardMarkup(row_width=2)
+    keyboard.add(
+        InlineKeyboardButton("✅ Подтвердить", callback_data="confirm_purchase"),
+        InlineKeyboardButton("❌ Отменить", callback_data="cancel")
+    )
+    return keyboard
+
+# Создаем клавиатуру подтверждения покупки себе
+def create_confirm_self_purchase_keyboard():
+    keyboard = InlineKeyboardMarkup(row_width=2)
+    keyboard.add(
+        InlineKeyboardButton("✅ Подтвердить", callback_data="confirm_self_purchase"),
+        InlineKeyboardButton("❌ Отменить", callback_data="cancel")
+    )
+    return keyboard
+
+# Создаем клавиатуру для профиля
+def create_profile_keyboard():
+    keyboard = InlineKeyboardMarkup(row_width=2)
+    keyboard.add(
+        InlineKeyboardButton("📋 История покупок", callback_data="purchase_history"),
+        InlineKeyboardButton(f"{EMOJIS['back']} Назад", callback_data="back_main")
+    )
+    return keyboard
+
+# Создаем клавиатуру для информации
+def create_info_keyboard():
+    keyboard = InlineKeyboardMarkup()
+    keyboard.add(
+        InlineKeyboardButton(f"{EMOJIS['back']} Назад", callback_data="back_main")
+    )
+    return keyboard
+
+# Обработчик команды /start
+@bot.message_handler(commands=['start'])
+def start(message: Message):
+    user_id = str(message.from_user.id)
+    username = message.from_user.username or message.from_user.first_name
+    
+    # Загружаем данные пользователей
+    users_data = load_users_data()
+    
+    # Создаем нового пользователя, если его нет
+    if user_id not in users_data:
+        users_data[user_id] = {
+            "username": username,
+            "balance": 100.0,  # Начальный баланс
+            "stars_bought": 0,
+            "subscriptions_bought": 0,
+            "total_spent": 0.0,
+            "referrals": [],
+            "referral_earnings": 0.0,
+            "referral_withdrawn": 0.0,
+            "referral_code": f"ref_{user_id}",
+            "purchases": []
+        }
+        save_users_data(users_data)
+    else:
+        # Обновляем существующего пользователя
+        users_data[user_id] = update_user_structure(users_data[user_id], user_id)
+        users_data[user_id]["username"] = username
+        save_users_data(users_data)
+    
+    # Очищаем состояние пользователя
+    user_states.pop(user_id, None)
+    
+    # Подсчитываем общее количество купленных звезд
+    total_stars = sum(user.get('stars_bought', 0) for user in users_data.values())
+    total_rub = total_stars * STAR_PRICE
+    
+    welcome_text = (
+        f"👋 Добро пожаловать\n\n"
+        f"✨ Здесь можно приобрести Telegram звезды & premium без верификации и дешевле чем в приложении\n\n"
+        f"📈 Курс: 1 Stars = {STAR_PRICE} RUB\n\n"
+        f"С помощью бота куплено:\n"
+        f"{total_stars:,} ⭐️ (~ {total_rub:,.1f} RUB)"
+    )
+    
+    bot.reply_to(message, welcome_text, reply_markup=create_main_menu())
+
+# Обработчик callback запросов
+@bot.callback_query_handler(func=lambda call: True)
+def handle_callback(call: CallbackQuery):
+    user_id = str(call.from_user.id)
+    users_data = load_users_data()
+    
+    if call.data == "stars":
+        # Показываем меню покупки звезд
+        bot.edit_message_text(
+            "⭐️ Покупка Telegram Stars\n\n"
+            f"💰 Цена: {STAR_PRICE} ₽ за звезду\n"
+            f"💳 Баланс: {users_data.get(user_id, {}).get('balance', 0):.2f} ₽\n\n"
+            "Введите количество звезд (50-50000):",
+            call.message.chat.id,
+            call.message.message_id,
+            reply_markup=create_cancel_keyboard()
+        )
+        user_states[user_id] = {"state": "waiting_stars_amount"}
+        
+    elif call.data == "premium":
+        # Показываем меню премиум подписок
+        bot.edit_message_text(
+            "🌟 Премиум подписки\n\n"
+            "🚀 Ускоренная доставка\n"
+            "💎 Приоритетная поддержка\n"
+            "🎁 Эксклюзивные предложения\n\n"
+            "Скоро будет доступно!",
+            call.message.chat.id,
+            call.message.message_id,
+            reply_markup=create_back_keyboard()
+        )
+        
+    elif call.data == "topup":
+        # Показываем меню пополнения баланса
+        bot.edit_message_text(
+            "💳 Пополнение баланса\n\n"
+            "💰 Минимальная сумма: 100 ₽\n"
+            "💸 Рекомендуемая сумма: 500 ₽\n\n"
+            "Скоро будет доступно!",
+            call.message.chat.id,
+            call.message.message_id,
+            reply_markup=create_back_keyboard()
+        )
+        
+    elif call.data == "profile":
+        # Показываем профиль пользователя
+        user_data = users_data.get(user_id, {})
+        user_data = update_user_structure(user_data, user_id)
+        
+        profile_text = (
+            f"👤 Профиль @{user_data.get('username', 'Unknown')}\n\n"
+            f"💰 Баланс: {user_data.get('balance', 0):.2f} ₽\n"
+            f"⭐️ Куплено звезд: {user_data.get('stars_bought', 0)}\n"
+            f"💎 Премиум подписок: {user_data.get('subscriptions_bought', 0)}\n"
+            f"💸 Всего потрачено: {user_data.get('total_spent', 0):.2f} ₽\n"
+            f"👥 Рефералов: {len(user_data.get('referrals', []))}\n"
+            f"🎁 Реферальные начисления: {user_data.get('referral_earnings', 0):.2f} ₽\n"
+            f"📤 Выведено: {user_data.get('referral_withdrawn', 0):.2f} ₽\n"
+            f"🔗 Реферальный код: {user_data.get('referral_code', 'ref_' + user_id)}"
+        )
+        
+        bot.edit_message_text(
+            profile_text,
+            call.message.chat.id,
+            call.message.message_id,
+            reply_markup=create_profile_keyboard()
+        )
+        
+    elif call.data == "info":
+        # Показываем информацию о боте
+        info_text = (
+            "ℹ️ Информация о боте\n\n"
+            "🤖 Название: StarShop\n"
+            "💰 Цена: 1.35 ₽ за звезду\n"
+            "📞 Поддержка: @StarShopsup"
+        )
+        
+        bot.edit_message_text(
+            info_text,
+            call.message.chat.id,
+            call.message.message_id,
+            reply_markup=create_info_keyboard()
+        )
+        
+    elif call.data == "purchase_history":
+        # Показываем историю покупок
+        user_data = users_data.get(user_id, {})
+        user_data = update_user_structure(user_data, user_id)
+        
+        purchases = user_data.get('purchases', [])
+        if not purchases:
+            history_text = "📋 История покупок пуста"
+        else:
+            history_text = "📋 История покупок:\n\n"
+            for purchase in purchases[-10:]:  # Показываем последние 10 покупок
+                history_text += (
+                    f"🆔 #{purchase['id']} | {purchase['date']}\n"
+                    f"⭐️ {purchase['stars']} звезд | 💰 {purchase['cost']:.2f} ₽\n"
+                    f"👤 {purchase['recipient']} | {purchase['status']}\n\n"
+                )
+        
+        bot.edit_message_text(
+            history_text,
+            call.message.chat.id,
+            call.message.message_id,
+            reply_markup=create_profile_keyboard()
+        )
+        
+
+        
+    elif call.data == "cancel":
+        # Отменяем текущее действие
+        user_states.pop(user_id, None)
+        bot.edit_message_text(
+            "❌ Действие отменено",
+            call.message.chat.id,
+            call.message.message_id,
+            reply_markup=create_main_menu()
+        )
+        
+    elif call.data == "back_main":
+        # Возвращаемся в главное меню
+        user_states.pop(user_id, None)
+        bot.edit_message_text(
+            "🏠 Главное меню\n\n"
+            f"💰 Баланс: {users_data.get(user_id, {}).get('balance', 0):.2f} ₽\n"
+            "Выберите действие:",
+            call.message.chat.id,
+            call.message.message_id,
+            reply_markup=create_main_menu()
+        )
+        
+    elif call.data == "recipient_self":
+        # Покупаем звезды себе
+        user_data = users_data.get(user_id, {})
+        user_data = update_user_structure(user_data, user_id)
+        
+        stars_amount = user_states.get(user_id, {}).get('stars_amount', 0)
+        
+        if stars_amount == 0:
+            bot.answer_callback_query(call.id, "❌ Ошибка: количество звезд не указано")
+            return
+        
+        # Проверяем баланс
+        cost = stars_amount * STAR_PRICE  # 1.35 ₽ за звезду
+        if user_data.get('balance', 0) < cost:
+            bot.answer_callback_query(call.id, f"❌ Недостаточно средств. Нужно: {cost:.2f} ₽")
+            return
+        
+        # Автоматически подставляем СВОЙ юзернейм
+        recipient = user_data['username']
+        
+        # Сохраняем в общий state confirm_purchase
+        user_states[user_id] = {
+            "state": "confirm_purchase",
+            "stars_amount": stars_amount,
+            "cost": cost,
+            "recipient": recipient
+        }
+        
+        # Логируем сохранение состояния для отладки
+        logging.info(f"✅ Состояние сохранено для пользователя {user_id}: {user_states[user_id]}")
+        
+        # Показываем подтверждение покупки
+        bot.edit_message_text(
+            f"📋 Подтверждение покупки:\n\n"
+            f"👤 Получатель: @{recipient}\n"
+            f"⭐ Количество: {stars_amount} звезд\n"
+            f"💰 Стоимость: {cost:.2f} ₽\n\n"
+            f"🔐 Отправить транзакцию?",
+            call.message.chat.id,
+            call.message.message_id,
+            reply_markup=create_confirm_purchase_keyboard()
+        )
+        
+    elif call.data == "confirm_purchase":
+        user_data = users_data.get(user_id, {})
+        user_data = update_user_structure(user_data, user_id)
+        purchase_data = user_states.get(user_id, {})
+
+        if not purchase_data or purchase_data.get("state") != "confirm_purchase":
+            bot.answer_callback_query(call.id, "❌ Сессия устарела")
+            bot.edit_message_text(
+                "❌ Сессия устарела. Начните сначала.",
+                call.message.chat.id,
+                call.message.message_id,
+                reply_markup=create_main_menu()
+            )
+            user_states.pop(user_id, None)
+            return
+
+        stars_amount = purchase_data["stars_amount"]
+        cost = purchase_data["cost"]
+        recipient = purchase_data["recipient"]
+
+        # Проверяем существование username ещё раз
+        username_exists, error_message = check_username_exists(recipient)
+        if not username_exists:
+            bot.answer_callback_query(call.id, f"❌ {error_message}")
+            bot.edit_message_text(
+                f"❌ {error_message}\n\n"
+                f"Проверьте правильность написания username и попробуйте снова.",
+                call.message.chat.id,
+                call.message.message_id,
+                reply_markup=create_back_keyboard()
+            )
+            user_states.pop(user_id, None)
+            return
+
+        # Проверка баланса (ещё раз)
+        if user_data.get('balance', 0) < cost:
+            bot.answer_callback_query(call.id, f"❌ Недостаточно средств")
+            bot.edit_message_text(
+                f"❌ Недостаточно средств. Нужно: {cost:.2f} ₽",
+                call.message.chat.id,
+                call.message.message_id,
+                reply_markup=create_back_keyboard()
+            )
+            user_states.pop(user_id, None)
+            return
+
+        # Загрузка мнемоники
+        wallet_file = "created_wallets/wallets_data.txt"
+        if not os.path.exists(wallet_file):
+            bot.edit_message_text(
+                "❌ Файл с данными кошелька не найден!",
+                call.message.chat.id,
+                call.message.message_id,
+                reply_markup=create_back_keyboard()
+            )
+            user_states.pop(user_id, None)
+            return
+
+        try:
+            with open(wallet_file, "r", encoding="utf-8") as f:
+                wallet_data = json.load(f)
+                mnemonics = wallet_data['mnemonics']
+                wallet_address = wallet_data['wallet_address']
+                logging.info(f"✅ Кошелек загружен: {wallet_address}")
+        except Exception as e:
+            logging.error(f"Ошибка загрузки кошелька: {e}")
+            bot.edit_message_text(
+                f"❌ Ошибка загрузки кошелька: {e}",
+                call.message.chat.id,
+                call.message.message_id,
+                reply_markup=create_back_keyboard()
+            )
+            user_states.pop(user_id, None)
+            return
+
+        # Отправка транзакции
+        bot.edit_message_text(
+            f"🚀 Отправляем {stars_amount} звёзд пользователю @{recipient}...",
+            call.message.chat.id,
+            call.message.message_id,
+            reply_markup=None
+        )
+
+        try:
+            import asyncio
+            result = asyncio.run(
+                buy_stars(
+                    recipient=recipient,
+                    amount=stars_amount,
+                    mnemonics=mnemonics,
+                    version='v4r2',
+                    testnet=False,
+                    send_mode=1,
+                    test_mode=False
+                )
+            )
+            logging.info(f"📊 Результат покупки: {result}")
+
+            # Проверяем результат более детально
+            success = False
+            if isinstance(result, bool):
+                success = result
+            elif isinstance(result, dict):
+                success = result.get('success', False)
+            else:
+                success = bool(result)
+            
+            if success:
+                # Успешно
+                user_data['balance'] -= cost
+                user_data['stars_bought'] += stars_amount
+                user_data['total_spent'] += cost
+                user_data['purchases'].append({
+                    "id": len(user_data['purchases']) + 1,
+                    "date": datetime.now().strftime("%d.%m.%Y %H:%M"),
+                    "stars": stars_amount,
+                    "cost": cost,
+                    "recipient": f"@{recipient}",
+                    "status": "completed"
+                })
+                users_data[user_id] = user_data
+                save_users_data(users_data)
+
+                bot.edit_message_text(
+                    f"✅ Успешно! {stars_amount} звёзд отправлены пользователю @{recipient}\n"
+                    f"💸 Списано: {cost:.2f} ₽",
+                    call.message.chat.id,
+                    call.message.message_id,
+                    reply_markup=create_back_keyboard()
+                )
+            else:
+                # Получаем детальную информацию об ошибке
+                error_details = "Неизвестная ошибка"
+                if isinstance(result, dict):
+                    error_details = result.get('error', result.get('message', 'Неизвестная ошибка'))
+                elif isinstance(result, str):
+                    error_details = result
+                
+                # Проверяем, является ли ошибка связанной с невалидным username
+                if isinstance(result, dict) and "username" in error_details.lower():
+                    # Показываем сообщение о невалидном username
+                    bot.edit_message_text(
+                        "❌ Некорректный username получателя. Проверьте правильность написания.",
+                        call.message.chat.id,
+                        call.message.message_id,
+                        reply_markup=create_back_keyboard()
+                    )
+                else:
+                    # Отправляем детальное сообщение админу только для других ошибок
+                    support_message = (
+                        f"⚠️ Ошибка покупки звезд!\n"
+                        f"Пользователь ID: {user_id}\n"
+                        f"Получатель: @{recipient}\n"
+                        f"Количество звезд: {stars_amount}\n"
+                        f"Стоимость: {cost:.2f} ₽\n"
+                        f"Детали ошибки: {error_details}"
+                    )
+                    send_to_support(support_message)
+                    
+                    # Показываем простое сообщение пользователю
+                    bot.edit_message_text(
+                        "Проблема на нашей стороне. Обратитесь в техническую поддержку @StarShopsup",
+                        call.message.chat.id,
+                        call.message.message_id,
+                        reply_markup=create_back_keyboard()
+                    )
+        except Exception as e:
+            logging.error(f"Ошибка при покупке: {e}")
+            
+            # Отправляем детальное сообщение админу
+            support_message = (
+                f"⚠️ Ошибка покупки звезд!\n"
+                f"Пользователь ID: {user_id}\n"
+                f"Получатель: @{recipient}\n"
+                f"Количество звезд: {stars_amount}\n"
+                f"Стоимость: {cost:.2f} ₽\n"
+                f"Детали ошибки: {str(e)}"
+            )
+            send_to_support(support_message)
+            
+            # Показываем простое сообщение пользователю
+            bot.edit_message_text(
+                "Проблема на нашей стороне. Обратитесь в техническую поддержку @StarShopsup",
+                call.message.chat.id,
+                call.message.message_id,
+                reply_markup=create_back_keyboard()
+            )
+
+        user_states.pop(user_id, None)
+
+
+
+    # Отвечаем на callback
+    bot.answer_callback_query(call.id)
+
+# Обработчик текстовых сообщений
+@bot.message_handler(func=lambda message: True)
+def handle_text(message: Message):
+    user_id = str(message.from_user.id)
+    user_state = user_states.get(user_id, {})
+    users_data = load_users_data()
+    user_data = users_data.get(user_id, {})
+    user_data = update_user_structure(user_data, user_id)
+
+    if user_state.get("state") == "waiting_stars_amount":
+        try:
+            stars_amount = int(message.text)
+            if 50 <= stars_amount <= 50000:
+                cost = stars_amount * STAR_PRICE
+                if user_data.get('balance', 0) < cost:
+                    bot.reply_to(
+                        message,
+                        f"❌ Недостаточно средств. Нужно: {cost:.2f} ₽",
+                        reply_markup=create_cancel_keyboard()
+                    )
+                    return
+                user_states[user_id] = {
+                    "state": "waiting_recipient_username",
+                    "stars_amount": stars_amount,
+                    "cost": cost
+                }
+                bot.reply_to(
+                    message,
+                    f"⭐️ Количество: {stars_amount} звезд\n"
+                    f"💰 Стоимость: {cost:.2f} ₽\n"
+                    "👤 Введите юзернейм получателя (например: @username или username):",
+                    reply_markup=create_recipient_keyboard()
+                )
+            else:
+                bot.reply_to(
+                    message,
+                    "❌ Количество звёзд должно быть от 50 до 50000!",
+                    reply_markup=create_cancel_keyboard()
+                )
+        except ValueError:
+            bot.reply_to(
+                message,
+                "❌ Введите корректное число!",
+                reply_markup=create_cancel_keyboard()
+            )
+
+    elif user_state.get("state") == "waiting_recipient_username":
+        recipient = message.text.strip().lstrip('@')
+        
+        # Проверяем существование username
+        username_exists, error_message = check_username_exists(recipient)
+        if not username_exists:
+            bot.reply_to(
+                message,
+                f"❌ {error_message}\n\n"
+                f"Проверьте правильность написания username и попробуйте снова.",
+                reply_markup=create_cancel_keyboard()
+            )
+            return
+
+        stars_amount = user_state["stars_amount"]
+        cost = user_state["cost"]
+
+        # Сохраняем получателя и переходим к подтверждению
+        user_states[user_id] = {
+            "state": "confirm_purchase",
+            "stars_amount": stars_amount,
+            "cost": cost,
+            "recipient": recipient
+        }
+
+        keyboard = create_confirm_purchase_keyboard()
+        bot.reply_to(
+            message,
+            f"📋 Подтверждение покупки:\n"
+            f"⭐ Количество: {stars_amount} звёзд\n"
+            f"💰 Стоимость: {cost:.2f} ₽\n"
+            f"👤 Получатель: @{recipient}\n"
+            f"🔐 Отправить транзакцию?",
+            reply_markup=keyboard
+        )
+
+    else:
+        bot.reply_to(
+            message,
+            "❓ Неизвестная команда. Используйте /start для начала работы.",
+            reply_markup=create_main_menu()
+        )
+
+# Инициализация логирования
+log_init()
+
+# Запуск бота
+if __name__ == "__main__":
+    print("🤖 Telegram бот запущен...")
+    print(f"👤 Username: @{bot.get_me().username}")
+    bot.polling(none_stop=True)
+            

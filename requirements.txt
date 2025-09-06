@@ -1,0 +1,7 @@
+pyTelegramBotAPI==4.15.4
+TonTools==2.1.2
+tonsdk==1.0.15
+aiohttp==3.12.15
+requests==2.31.0
+coloredlogs==15.0.1
+Flask==3.0.0
