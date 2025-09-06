@@ -64,8 +64,11 @@ class TonPayment:
             ton_amount = self.rubles_to_ton(amount_rub)
             payment_id = f"ton_{user_id}_{int(time.time())}"
             
-            # Создаем уникальный комментарий для идентификации платежа
-            comment = f"ID_{user_id}_{int(time.time())}"
+            # Создаем короткий уникальный комментарий для идентификации платежа
+            # Используем последние 3 цифры user_id + последние 3 цифры timestamp для краткости
+            user_suffix = str(user_id)[-3:]  # Последние 3 цифры user_id
+            time_suffix = str(int(time.time()))[-3:]  # Последние 3 цифры timestamp
+            comment = f"T{user_suffix}{time_suffix}"  # Например: T188065
             
             payment_data = {
                 "payment_id": payment_id,
@@ -96,6 +99,9 @@ class TonPayment:
                 # Проверяем все транзакции за последние 30 минут
                 current_time = int(time.time())
                 
+                logging.info(f"🔍 Проверяем {len(transactions)} транзакций для платежа {payment_id}")
+                logging.info(f"🔍 Ожидаемый комментарий: {expected_comment}")
+                
                 for tx in transactions:
                     if tx.get("in_msg"):
                         in_msg = tx["in_msg"]
@@ -109,6 +115,8 @@ class TonPayment:
                                 # Проверяем комментарий в транзакции
                                 tx_comment = in_msg.get("message", "")
                                 
+                                logging.info(f"🔍 Транзакция: сумма {received_amount:.4f} TON, комментарий: '{tx_comment}', время: {tx_time}")
+                                
                                 # Если указан ожидаемый комментарий, проверяем его
                                 if expected_comment and expected_comment in tx_comment:
                                     logging.info(f"✅ Найден платеж с комментарием: {expected_comment}, сумма: {received_amount:.4f} TON")
@@ -119,8 +127,21 @@ class TonPayment:
                                         "expected_comment": expected_comment,
                                         "transaction": tx
                                     }
+                                # Дополнительная проверка: ищем платежи с похожими комментариями (начинающимися с T)
+                                elif expected_comment and expected_comment.startswith("T") and tx_comment.startswith("T") and len(tx_comment) >= 4:
+                                    # Проверяем, совпадают ли последние цифры
+                                    if expected_comment[-3:] in tx_comment or tx_comment[-3:] in expected_comment:
+                                        logging.info(f"✅ Найден платеж с похожим комментарием: {tx_comment} (ожидался: {expected_comment}), сумма: {received_amount:.4f} TON")
+                                        return {
+                                            "status": "approved",
+                                            "amount": received_amount,
+                                            "comment": tx_comment,
+                                            "expected_comment": expected_comment,
+                                            "transaction": tx
+                                        }
                                 elif not expected_comment and received_amount > 0:
                                     # Если комментарий не указан, считаем любой входящий платеж успешным
+                                    logging.info(f"✅ Найден платеж без комментария, сумма: {received_amount:.4f} TON")
                                     return {
                                         "status": "approved",
                                         "amount": received_amount,
@@ -128,6 +149,7 @@ class TonPayment:
                                         "transaction": tx
                                     }
             
+            logging.info(f"⏳ Платеж {payment_id} не найден среди последних транзакций")
             return {
                 "status": "pending",
                 "message": "Ожидается поступление TON с правильным комментарием"
@@ -149,7 +171,7 @@ class TonPayment:
 📋 Платеж сформирован
 
 💸 Сумма к отправке: {payment_data['amount_ton']:.4f} TON
-⚠️ Комментарий: {payment_data['comment']}
+⚠️ Комментарий: {payment_data['comment']} (короткий, легко ввести)
 💳 Адрес для оплаты: {self.wallet_address}
 
 ‼️ Обязательно указывайте комментарий при отправке монет, в противном случае - пополнение не будет засчитано

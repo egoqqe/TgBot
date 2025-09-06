@@ -26,11 +26,15 @@ class TonMonitor:
                 "archival": True
             }
             
+            logging.info(f"🔍 Запрашиваем транзакции для кошелька: {self.wallet_address}")
+            
             response = requests.get(url, params=params, timeout=10)
             if response.status_code == 200:
                 data = response.json()
                 if data.get("ok"):
-                    return data.get("result", [])
+                    transactions = data.get("result", [])
+                    logging.info(f"✅ Получено {len(transactions)} транзакций")
+                    return transactions
                 else:
                     logging.error(f"TON Center API error: {data.get('error', 'Unknown error')}")
                     return []
