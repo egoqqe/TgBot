@@ -317,7 +317,7 @@ def update_user_structure(user_data, user_id):
     return user_data
 
 # Создаем главное меню
-def create_main_menu():
+def create_main_menu(user_balance=None):
     keyboard = InlineKeyboardMarkup(row_width=2)
     keyboard.add(
         InlineKeyboardButton(f"{EMOJIS['stars']} Звезды", callback_data="stars")
@@ -330,6 +330,14 @@ def create_main_menu():
         InlineKeyboardButton(f"{EMOJIS['info']} Информация", callback_data="info")
     )
     return keyboard
+
+# Создаем текст главного меню с балансом
+def create_main_menu_text(user_balance=0):
+    return (
+        f"🏠 Главное меню\n\n"
+        f"💰 Баланс: {user_balance:.2f} ₽\n\n"
+        f"Выберите действие:"
+    )
 
 # Создаем клавиатуру с кнопкой "Отмена"
 def create_cancel_keyboard():
@@ -420,12 +428,18 @@ def start(message: Message):
     # Очищаем состояние пользователя
     user_states.pop(user_id, None)
     
+    # Получаем данные пользователя
+    user_data = users_data.get(user_id, {})
+    user_data = update_user_structure(user_data, user_id)
+    user_balance = user_data.get('balance', 0)
+    
     # Подсчитываем общее количество купленных звезд
     total_stars = sum(user.get('stars_bought', 0) for user in users_data.values())
     total_rub = total_stars * STAR_PRICE
     
     welcome_text = (
         f"👋 Добро пожаловать\n\n"
+        f"💰 Ваш баланс: {user_balance:.2f} ₽\n\n"
         f"✨ Здесь можно приобрести Telegram звезды без верификации и дешевле чем в приложении\n\n"
         f"📈 Курс: 1 Stars = {STAR_PRICE} RUB\n\n"
         f"С помощью бота куплено:\n"
@@ -610,30 +624,38 @@ def handle_callback(call: CallbackQuery):
     elif call.data == "cancel":
         # Отменяем текущее действие и возвращаемся в главное меню
         user_states.pop(user_id, None)
-        main_menu_text = (
-            "🏠 Главное меню\n\n"
-            "Добро пожаловать в StarShop! 🌟\n\n"
-            "Выберите действие:"
-        )
-        safe_edit_message(
+        
+        # Получаем баланс пользователя
+        user_data = users_data.get(user_id, {})
+        user_data = update_user_structure(user_data, user_id)
+        user_balance = user_data.get('balance', 0)
+        
+        main_menu_text = create_main_menu_text(user_balance)
+        
+        # Отправляем фото с главным меню
+        send_photo_with_text(
             chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
             text=main_menu_text,
+            photo_path="старт.jpeg",
             reply_markup=create_main_menu()
         )
         
     elif call.data == "back_main":
         # Возвращаемся в главное меню
         user_states.pop(user_id, None)
-        main_menu_text = (
-            "🏠 Главное меню\n\n"
-            f"💰 Баланс: {users_data.get(user_id, {}).get('balance', 0):.2f} ₽\n"
-            "Выберите действие:"
-        )
-        safe_edit_message(
+        
+        # Получаем баланс пользователя
+        user_data = users_data.get(user_id, {})
+        user_data = update_user_structure(user_data, user_id)
+        user_balance = user_data.get('balance', 0)
+        
+        main_menu_text = create_main_menu_text(user_balance)
+        
+        # Отправляем фото с главным меню
+        send_photo_with_text(
             chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
             text=main_menu_text,
+            photo_path="старт.jpeg",
             reply_markup=create_main_menu()
         )
         
