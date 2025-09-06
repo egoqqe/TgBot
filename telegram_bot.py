@@ -297,6 +297,20 @@ def update_user_structure(user_data, user_id):
     if "purchases" not in user_data:
         user_data["purchases"] = []
     
+    # Реферальная система
+    if "referrals" not in user_data:
+        user_data["referrals"] = []
+    if "referral_earnings" not in user_data:
+        user_data["referral_earnings"] = 0.0
+    if "referral_withdrawn" not in user_data:
+        user_data["referral_withdrawn"] = 0.0
+    if "referral_code" not in user_data:
+        user_data["referral_code"] = f"ref_{user_id}"
+    if "referred_by" not in user_data:
+        user_data["referred_by"] = None
+    if "referral_discount" not in user_data:
+        user_data["referral_discount"] = 0.0  # Скидка в рублях за звезду
+    
     # Вычисляем total_spent из существующих покупок
     if user_data["purchases"]:
         total_spent = sum(purchase.get("cost", 0) for purchase in user_data["purchases"])
@@ -308,6 +322,101 @@ def update_user_structure(user_data, user_id):
     
     return user_data
 
+# Функции для работы с реферальной системой
+def get_referral_discount(user_data):
+    """
+    Вычисляет скидку на основе количества приглашенных друзей, пополнивших баланс на 250+ рублей
+    Лимит: максимум 3 реферала для максимальной скидки
+    """
+    referrals = user_data.get("referrals", [])
+    qualified_referrals = 0
+    
+    for referral in referrals:
+        if referral.get("total_spent", 0) >= 250.0:
+            qualified_referrals += 1
+    
+    # Ограничиваем количество рефералов до 3
+    qualified_referrals = min(qualified_referrals, 3)
+    
+    # За каждого квалифицированного реферала скидка 0.01 рубля за звезду
+    discount_per_star = qualified_referrals * 0.01
+    return discount_per_star  # Максимальная скидка 0.03 рубля за звезду (3 реферала)
+
+def update_referral_discount(user_data):
+    """
+    Обновляет скидку пользователя на основе его рефералов
+    """
+    user_data["referral_discount"] = get_referral_discount(user_data)
+    return user_data
+
+def add_referral(referrer_id, referred_id, users_data):
+    """
+    Добавляет реферала к пользователю
+    """
+    if referrer_id not in users_data:
+        return False
+    
+    referrer_data = users_data[referrer_id]
+    referred_data = users_data.get(referred_id, {})
+    
+    # Проверяем, что пользователь еще не является рефералом
+    existing_referrals = [ref["user_id"] for ref in referrer_data.get("referrals", [])]
+    if referred_id in existing_referrals:
+        return False
+    
+    # Добавляем реферала
+    referral_info = {
+        "user_id": referred_id,
+        "username": referred_data.get("username", "Unknown"),
+        "registration_date": datetime.now().strftime("%d.%m.%Y %H:%M"),
+        "total_spent": 0.0,
+        "stars_bought": 0
+    }
+    
+    referrer_data["referrals"].append(referral_info)
+    
+    # Обновляем скидку реферера
+    referrer_data = update_referral_discount(referrer_data)
+    users_data[referrer_id] = referrer_data
+    
+    # Устанавливаем связь для реферала
+    referred_data["referred_by"] = referrer_id
+    users_data[referred_id] = referred_data
+    
+    return True
+
+def update_referral_stats(referred_id, users_data):
+    """
+    Обновляет статистику реферала при покупке
+    """
+    referred_data = users_data.get(referred_id, {})
+    referrer_id = referred_data.get("referred_by")
+    
+    if not referrer_id or referrer_id not in users_data:
+        return
+    
+    referrer_data = users_data[referrer_id]
+    referrals = referrer_data.get("referrals", [])
+    
+    # Находим реферала в списке
+    for referral in referrals:
+        if referral["user_id"] == referred_id:
+            referral["total_spent"] = referred_data.get("total_spent", 0)
+            referral["stars_bought"] = referred_data.get("stars_bought", 0)
+            break
+    
+    # Обновляем скидку реферера
+    referrer_data = update_referral_discount(referrer_data)
+    users_data[referrer_id] = referrer_data
+
+def get_effective_star_price(user_data):
+    """
+    Возвращает эффективную цену за звезду с учетом скидки
+    """
+    base_price = STAR_PRICE
+    discount = user_data.get("referral_discount", 0.0)
+    return max(base_price - discount, 0.1)  # Минимальная цена 0.1 рубля
+
 # Создаем главное меню
 def create_main_menu(user_balance=None):
     keyboard = InlineKeyboardMarkup(row_width=2)
@@ -317,6 +426,9 @@ def create_main_menu(user_balance=None):
     keyboard.add(
         InlineKeyboardButton(f"{EMOJIS['topup']} Пополнить баланс", callback_data="topup"),
         InlineKeyboardButton(f"{EMOJIS['profile']} Профиль", callback_data="profile")
+    )
+    keyboard.add(
+        InlineKeyboardButton("🎁 Реферальная программа", callback_data="referral")
     )
     keyboard.add(
         InlineKeyboardButton(f"{EMOJIS['info']} Информация", callback_data="info")
@@ -387,6 +499,22 @@ def create_info_keyboard():
     )
     return keyboard
 
+# Создаем клавиатуру для реферальной программы
+def create_referral_keyboard():
+    keyboard = InlineKeyboardMarkup(row_width=2)
+    keyboard.add(
+        InlineKeyboardButton("📋 Мои рефералы", callback_data="my_referrals"),
+        InlineKeyboardButton("🔗 Моя ссылка", callback_data="my_referral_link")
+    )
+    keyboard.add(
+        InlineKeyboardButton("📊 Статистика", callback_data="referral_stats"),
+        InlineKeyboardButton("💰 Заработок", callback_data="referral_earnings")
+    )
+    keyboard.add(
+        InlineKeyboardButton(f"{EMOJIS['back']} Назад", callback_data="back_main")
+    )
+    return keyboard
+
 # Обработчик команды /start
 @bot.message_handler(commands=['start'])
 def start(message: Message):
@@ -395,6 +523,13 @@ def start(message: Message):
     
     # Загружаем данные пользователей
     users_data = load_users_data()
+    
+    # Проверяем реферальную ссылку
+    referrer_id = None
+    if len(message.text.split()) > 1:
+        referral_code = message.text.split()[1]
+        if referral_code.startswith('ref_'):
+            referrer_id = referral_code.replace('ref_', '')
     
     # Создаем нового пользователя, если его нет
     if user_id not in users_data:
@@ -406,6 +541,12 @@ def start(message: Message):
             "total_spent": 0.0,
             "purchases": []
         }
+        
+        # Если есть реферальная ссылка, добавляем реферала
+        if referrer_id and referrer_id != user_id:
+            add_referral(referrer_id, user_id, users_data)
+            logging.info(f"✅ Пользователь {user_id} зарегистрирован по реферальной ссылке от {referrer_id}")
+        
         save_users_data(users_data)
     else:
         # Обновляем существующего пользователя
@@ -425,12 +566,22 @@ def start(message: Message):
     total_stars = 13430 + sum(user.get('stars_bought', 0) for user in users_data.values()) #для хайпа немного приврём
     total_rub = total_stars * STAR_PRICE
     
+    # Получаем эффективную цену с учетом скидки
+    effective_price = get_effective_star_price(user_data)
+    discount = user_data.get("referral_discount", 0.0)
+    
     welcome_text = (
         f"👋 Добро пожаловать\n\n"
         f"💰 Ваш баланс: {user_balance:.2f} ₽\n\n"
         f"✨ Здесь можно приобрести Telegram звезды без верификации и дешевле чем в приложении\n\n"
-        f"📈 Курс: 1 Stars = {STAR_PRICE} RUB\n\n"
-        f"С помощью бота куплено:\n"
+        f"📈 Курс: 1 Stars = {effective_price:.2f} RUB"
+    )
+    
+    if discount > 0:
+        welcome_text += f"\n🎁 Ваша скидка: {discount:.2f} ₽ за звезду"
+    
+    welcome_text += (
+        f"\n\nС помощью бота куплено:\n"
         f"{total_stars:,} ⭐️ (~ {total_rub:,.1f} RUB)"
     )
     
@@ -456,12 +607,24 @@ def handle_callback(call: CallbackQuery):
     
     if call.data == "stars":
         # Показываем меню покупки звезд
+        user_data = users_data.get(user_id, {})
+        user_data = update_user_structure(user_data, user_id)
+        effective_price = get_effective_star_price(user_data)
+        discount = user_data.get("referral_discount", 0.0)
+        
         stars_text = (
             "⭐️ Покупка Telegram Stars\n\n"
-            f"💰 Цена: {STAR_PRICE} ₽ за звезду\n"
-            f"💳 Баланс: {users_data.get(user_id, {}).get('balance', 0):.2f} ₽\n\n"
+            f"💰 Цена: {effective_price:.2f} ₽ за звезду"
+        )
+        
+        if discount > 0:
+            stars_text += f"\n🎁 Ваша скидка: {discount:.2f} ₽ за звезду"
+        
+        stars_text += (
+            f"\n💳 Баланс: {user_data.get('balance', 0):.2f} ₽\n\n"
             "Введите количество звезд (50-50000):"
         )
+        
         safe_edit_message(
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
@@ -547,11 +710,19 @@ def handle_callback(call: CallbackQuery):
         user_data = users_data.get(user_id, {})
         user_data = update_user_structure(user_data, user_id)
         
+        referrals = user_data.get("referrals", [])
+        qualified_referrals = sum(1 for ref in referrals if ref.get("total_spent", 0) >= 250.0)
+        discount = user_data.get("referral_discount", 0.0)
+        
         profile_text = (
             f"👤 Профиль @{user_data.get('username', 'Unknown')}\n\n"
             f"💰 Баланс: {user_data.get('balance', 0):.2f} ₽\n"
             f"⭐️ Куплено звезд: {user_data.get('stars_bought', 0)}\n"
-            f"💸 Всего потрачено: {user_data.get('total_spent', 0):.2f} ₽"
+            f"💸 Всего потрачено: {user_data.get('total_spent', 0):.2f} ₽\n\n"
+            f"🎁 Реферальная программа:\n"
+            f"👥 Рефералов: {len(referrals)}\n"
+            f"✅ Квалифицированных: {qualified_referrals}\n"
+            f"🎁 Скидка: {discount:.2f} ₽ за звезду"
         )
         
         # Отправляем изображение ава.jpeg с информацией профиля
@@ -804,6 +975,10 @@ def handle_callback(call: CallbackQuery):
                     "status": "completed"
                 })
                 users_data[user_id] = user_data
+                
+                # Обновляем статистику рефералов
+                update_referral_stats(user_id, users_data)
+                
                 save_users_data(users_data)
 
                 # Отправляем изображение чек.jpeg с сообщением об успешной покупке
@@ -899,6 +1074,10 @@ def handle_callback(call: CallbackQuery):
                         
                         user_data['balance'] += amount
                         users_data[user_id] = user_data
+                        
+                        # Обновляем статистику рефералов
+                        update_referral_stats(user_id, users_data)
+                        
                         save_users_data(users_data)
                         
                         # Очищаем состояние
@@ -1033,6 +1212,10 @@ def handle_callback(call: CallbackQuery):
                     
                     user_data['balance'] += amount
                     users_data[user_id] = user_data
+                    
+                    # Обновляем статистику рефералов
+                    update_referral_stats(user_id, users_data)
+                    
                     save_users_data(users_data)
                     
                     # Очищаем состояние
@@ -1219,6 +1402,10 @@ def handle_callback(call: CallbackQuery):
                     "status": "completed"
                 })
                 users_data[user_id] = user_data
+                
+                # Обновляем статистику рефералов
+                update_referral_stats(user_id, users_data)
+                
                 save_users_data(users_data)
 
                 # Отправляем изображение чек.jpeg с сообщением об успешной покупке
@@ -1289,6 +1476,143 @@ def handle_callback(call: CallbackQuery):
         
         # Очищаем состояние пользователя
         user_states.pop(user_id, None)
+
+    elif call.data == "referral":
+        # Показываем реферальную программу
+        user_data = users_data.get(user_id, {})
+        user_data = update_user_structure(user_data, user_id)
+        
+        referrals = user_data.get("referrals", [])
+        qualified_referrals = sum(1 for ref in referrals if ref.get("total_spent", 0) >= 250.0)
+        discount = user_data.get("referral_discount", 0.0)
+        
+        referral_text = (
+            "🎁 Реферальная программа\n\n"
+            f"📊 Ваша статистика:\n"
+            f"👥 Всего рефералов: {len(referrals)}\n"
+            f"✅ Квалифицированных: {qualified_referrals}\n"
+            f"🎁 Ваша скидка: {discount:.2f} ₽ за звезду\n\n"
+            f"💰 Как это работает:\n"
+            f"• За каждого приглашенного друга, пополнившего баланс на 250+ ₽\n"
+            f"• Вы получаете скидку 0.01 ₽ за звезду\n"
+            f"• Максимум 3 реферала = скидка 0.03 ₽ за звезду\n\n"
+            f"🔗 Ваша реферальная ссылка:\n"
+            f"https://t.me/{bot.get_me().username}?start={user_data.get('referral_code', f'ref_{user_id}')}"
+        )
+        
+        safe_edit_message(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text=referral_text,
+            reply_markup=create_referral_keyboard()
+        )
+        
+    elif call.data == "my_referrals":
+        # Показываем список рефералов
+        user_data = users_data.get(user_id, {})
+        user_data = update_user_structure(user_data, user_id)
+        
+        referrals = user_data.get("referrals", [])
+        if not referrals:
+            referrals_text = "📋 У вас пока нет рефералов\n\nПригласите друзей по вашей реферальной ссылке!"
+        else:
+            referrals_text = "📋 Ваши рефералы:\n\n"
+            for i, referral in enumerate(referrals, 1):
+                status = "✅" if referral.get("total_spent", 0) >= 250.0 else "⏳"
+                referrals_text += (
+                    f"{i}. {status} @{referral.get('username', 'Unknown')}\n"
+                    f"   💰 Потрачено: {referral.get('total_spent', 0):.2f} ₽\n"
+                    f"   ⭐ Звезд: {referral.get('stars_bought', 0)}\n"
+                    f"   📅 Регистрация: {referral.get('registration_date', 'Unknown')}\n\n"
+                )
+        
+        safe_edit_message(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text=referrals_text,
+            reply_markup=create_referral_keyboard()
+        )
+        
+    elif call.data == "my_referral_link":
+        # Показываем реферальную ссылку
+        user_data = users_data.get(user_id, {})
+        user_data = update_user_structure(user_data, user_id)
+        
+        referral_code = user_data.get('referral_code', f'ref_{user_id}')
+        referral_link = f"https://t.me/{bot.get_me().username}?start={referral_code}"
+        
+        link_text = (
+            "🔗 Ваша реферальная ссылка:\n\n"
+            f"`{referral_link}`\n\n"
+            f"📋 Код: `{referral_code}`\n\n"
+            f"💡 Поделитесь этой ссылкой с друзьями!\n"
+            f"За каждого друга, пополнившего баланс на 250+ ₽,\n"
+            f"вы получите скидку 0.01 ₽ за звезду.\n"
+            f"Максимум 3 реферала = скидка 0.03 ₽ за звезду."
+        )
+        
+        safe_edit_message(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text=link_text,
+            reply_markup=create_referral_keyboard()
+        )
+        
+    elif call.data == "referral_stats":
+        # Показываем статистику рефералов
+        user_data = users_data.get(user_id, {})
+        user_data = update_user_structure(user_data, user_id)
+        
+        referrals = user_data.get("referrals", [])
+        total_referrals = len(referrals)
+        qualified_referrals = sum(1 for ref in referrals if ref.get("total_spent", 0) >= 250.0)
+        total_spent_by_referrals = sum(ref.get("total_spent", 0) for ref in referrals)
+        total_stars_by_referrals = sum(ref.get("stars_bought", 0) for ref in referrals)
+        discount = user_data.get("referral_discount", 0.0)
+        
+        stats_text = (
+            "📊 Статистика рефералов\n\n"
+            f"👥 Всего рефералов: {total_referrals}\n"
+            f"✅ Квалифицированных: {qualified_referrals}\n"
+            f"💰 Потратили рефералы: {total_spent_by_referrals:.2f} ₽\n"
+            f"⭐ Купили звезд: {total_stars_by_referrals}\n"
+            f"🎁 Ваша скидка: {discount:.2f} ₽ за звезду\n\n"
+            f"💡 Квалифицированный реферал - это пользователь,\n"
+            f"который пополнил баланс на 250+ ₽\n"
+            f"Максимум 3 реферала учитываются для скидки"
+        )
+        
+        safe_edit_message(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text=stats_text,
+            reply_markup=create_referral_keyboard()
+        )
+        
+    elif call.data == "referral_earnings":
+        # Показываем информацию о заработке
+        user_data = users_data.get(user_id, {})
+        user_data = update_user_structure(user_data, user_id)
+        
+        discount = user_data.get("referral_discount", 0.0)
+        stars_bought = user_data.get("stars_bought", 0)
+        total_saved = stars_bought * discount
+        
+        earnings_text = (
+            "💰 Ваш заработок от рефералов\n\n"
+            f"🎁 Скидка за звезду: {discount:.2f} ₽\n"
+            f"⭐ Куплено звезд: {stars_bought}\n"
+            f"💵 Всего сэкономлено: {total_saved:.2f} ₽\n\n"
+            f"💡 Чем больше рефералов, тем больше скидка!\n"
+            f"Максимальная скидка: 0.03 ₽ за звезду (3 реферала)"
+        )
+        
+        safe_edit_message(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text=earnings_text,
+            reply_markup=create_referral_keyboard()
+        )
 
     # Callback уже отвечен в начале функции
 
@@ -1425,7 +1749,10 @@ def handle_text(message: Message):
         try:
             stars_amount = int(message.text)
             if 50 <= stars_amount <= 50000:
-                cost = stars_amount * STAR_PRICE
+                # Используем эффективную цену с учетом скидки
+                effective_price = get_effective_star_price(user_data)
+                cost = stars_amount * effective_price
+                
                 if user_data.get('balance', 0) < cost:
                     bot.reply_to(
                         message,
@@ -1433,16 +1760,29 @@ def handle_text(message: Message):
                         reply_markup=create_cancel_keyboard()
                     )
                     return
+                    
                 user_states[user_id] = {
                     "state": "waiting_recipient_username",
                     "stars_amount": stars_amount,
                     "cost": cost
                 }
+                
+                discount = user_data.get("referral_discount", 0.0)
+                reply_text = (
+                    f"⭐️ Количество: {stars_amount} звезд\n"
+                    f"💰 Стоимость: {cost:.2f} ₽"
+                )
+                
+                if discount > 0:
+                    original_cost = stars_amount * STAR_PRICE
+                    saved = original_cost - cost
+                    reply_text += f"\n🎁 Сэкономлено: {saved:.2f} ₽"
+                
+                reply_text += "\n👤 Введите юзернейм получателя (например: @username или username):"
+                
                 bot.reply_to(
                     message,
-                    f"⭐️ Количество: {stars_amount} звезд\n"
-                    f"💰 Стоимость: {cost:.2f} ₽\n"
-                    "👤 Введите юзернейм получателя (например: @username или username):",
+                    reply_text,
                     reply_markup=create_recipient_keyboard()
                 )
             else:
