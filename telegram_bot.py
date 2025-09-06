@@ -1090,6 +1090,153 @@ def handle_callback(call: CallbackQuery):
         else:
             bot.answer_callback_query(call.id, "❌ Нет активного TON платежа для проверки")
 
+    elif call.data == "confirm_self_purchase":
+        # Покупка звезд себе
+        user_data = users_data.get(user_id, {})
+        user_data = update_user_structure(user_data, user_id)
+        purchase_data = user_states.get(user_id, {})
+        
+        if not purchase_data:
+            bot.answer_callback_query(call.id, "❌ Нет данных о покупке")
+            return
+        
+        stars_amount = purchase_data.get("stars_amount")
+        cost = purchase_data.get("cost")
+        recipient = user_data['username']  # Покупаем себе
+        
+        # Проверяем баланс (ещё раз)
+        if user_data.get('balance', 0) < cost:
+            bot.answer_callback_query(call.id, f"❌ Недостаточно средств")
+            balance_error_text = f"❌ Недостаточно средств. Нужно: {cost:.2f} ₽"
+            safe_edit_message(
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                text=balance_error_text,
+                reply_markup=create_back_keyboard()
+            )
+            user_states.pop(user_id, None)
+            return
+
+        # Загрузка мнемоники из config.py
+        try:
+            from config import WALLET_MNEMONICS, WALLET_ADDRESS
+            mnemonics = WALLET_MNEMONICS
+            wallet_address = WALLET_ADDRESS
+            logging.info(f"✅ Кошелек загружен: {wallet_address}")
+        except Exception as e:
+            logging.error(f"Ошибка загрузки кошелька: {e}")
+            wallet_error_text = f"❌ Ошибка загрузки кошелька: {e}"
+            safe_edit_message(
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                text=wallet_error_text,
+                reply_markup=create_back_keyboard()
+            )
+            user_states.pop(user_id, None)
+            return
+
+        # Отправка транзакции
+        sending_text = f"🚀 Отправляем {stars_amount} звёзд пользователю @{recipient}..."
+        safe_edit_message(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text=sending_text,
+            reply_markup=None
+        )
+
+        try:
+            # Покупка звезд
+            result = asyncio.run(buy_stars(
+                recipient=recipient,
+                amount=stars_amount,
+                mnemonics=mnemonics
+            ))
+            
+            if result:
+                # Успешная покупка
+                user_data['balance'] -= cost
+                user_data['stars_bought'] += stars_amount
+                user_data['total_spent'] += cost
+                user_data['purchases'].append({
+                    "id": len(user_data['purchases']) + 1,
+                    "date": datetime.now().strftime("%d.%m.%Y %H:%M"),
+                    "stars": stars_amount,
+                    "cost": cost,
+                    "recipient": f"@{recipient}",
+                    "status": "completed"
+                })
+                users_data[user_id] = user_data
+                save_users_data(users_data)
+
+                # Отправляем изображение чек.jpeg с сообщением об успешной покупке
+                success_text = (
+                    f"✅ Успешно! {stars_amount} звёзд отправлены пользователю @{recipient}\n"
+                    f"💸 Списано: {cost:.2f} ₽"
+                )
+                send_photo_with_text(
+                    chat_id=call.message.chat.id,
+                    text=success_text,
+                    photo_path="чек.jpeg",
+                    reply_markup=create_back_keyboard()
+                )
+                
+                # Отправляем уведомление в техподдержку
+                support_message = (
+                    f"✅ Успешная покупка звезд!\n"
+                    f"Пользователь ID: {user_id}\n"
+                    f"Получатель: @{recipient}\n"
+                    f"Количество звезд: {stars_amount}\n"
+                    f"Стоимость: {cost:.2f} ₽\n"
+                    f"Время: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}"
+                )
+                send_to_support(support_message)
+                
+            else:
+                # Ошибка покупки
+                error_details = result if isinstance(result, str) else "Неизвестная ошибка"
+                
+                # Проверяем, является ли ошибка связанной с невалидным username
+                if isinstance(result, dict) and "username" in error_details.lower():
+                    # Показываем сообщение о невалидном username
+                    safe_edit_message(
+                        chat_id=call.message.chat.id,
+                        message_id=call.message.message_id,
+                        text="❌ Некорректный username получателя. Проверьте правильность написания.",
+                        reply_markup=create_back_keyboard()
+                    )
+                else:
+                    # Общая ошибка
+                    safe_edit_message(
+                        chat_id=call.message.chat.id,
+                        message_id=call.message.message_id,
+                        text="Проблема на нашей стороне. Обратитесь в техническую поддержку @StarShopsup",
+                        reply_markup=create_back_keyboard()
+                    )
+                
+                # Отправляем уведомление в техподдержку
+                support_message = (
+                    f"⚠️ Ошибка покупки звезд!\n"
+                    f"Пользователь ID: {user_id}\n"
+                    f"Получатель: @{recipient}\n"
+                    f"Количество звезд: {stars_amount}\n"
+                    f"Стоимость: {cost:.2f} ₽\n"
+                    f"Ошибка: {error_details}\n"
+                    f"Время: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}"
+                )
+                send_to_support(support_message)
+                
+        except Exception as e:
+            logging.error(f"Ошибка покупки звезд: {e}")
+            safe_edit_message(
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                text="Проблема на нашей стороне. Обратитесь в техническую поддержку @StarShopsup",
+                reply_markup=create_back_keyboard()
+            )
+        
+        # Очищаем состояние пользователя
+        user_states.pop(user_id, None)
+
     # Callback уже отвечен в начале функции
 
 # Обработчик текстовых сообщений
