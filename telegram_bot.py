@@ -320,8 +320,7 @@ def update_user_structure(user_data, user_id):
 def create_main_menu():
     keyboard = InlineKeyboardMarkup(row_width=2)
     keyboard.add(
-        InlineKeyboardButton(f"{EMOJIS['stars']} Звезды", callback_data="stars"),
-        InlineKeyboardButton(f"{EMOJIS['premium']} Премиум", callback_data="premium")
+        InlineKeyboardButton(f"{EMOJIS['stars']} Звезды", callback_data="stars")
     )
     keyboard.add(
         InlineKeyboardButton(f"{EMOJIS['topup']} Пополнить баланс", callback_data="topup"),
@@ -427,7 +426,7 @@ def start(message: Message):
     
     welcome_text = (
         f"👋 Добро пожаловать\n\n"
-        f"✨ Здесь можно приобрести Telegram звезды & premium без верификации и дешевле чем в приложении\n\n"
+        f"✨ Здесь можно приобрести Telegram звезды без верификации и дешевле чем в приложении\n\n"
         f"📈 Курс: 1 Stars = {STAR_PRICE} RUB\n\n"
         f"С помощью бота куплено:\n"
         f"{total_stars:,} ⭐️ (~ {total_rub:,.1f} RUB)"
@@ -469,21 +468,6 @@ def handle_callback(call: CallbackQuery):
         )
         user_states[user_id] = {"state": "waiting_stars_amount"}
         
-    elif call.data == "premium":
-        # Показываем меню премиум подписок
-        premium_text = (
-            "🌟 Премиум подписки\n\n"
-            "🚀 Ускоренная доставка\n"
-            "💎 Приоритетная поддержка\n"
-            "🎁 Эксклюзивные предложения\n\n"
-            "Скоро будет доступно!"
-        )
-        safe_edit_message(
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            text=premium_text,
-            reply_markup=create_back_keyboard()
-        )
         
     elif call.data == "topup":
         # Показываем меню выбора способа оплаты
@@ -565,7 +549,6 @@ def handle_callback(call: CallbackQuery):
             f"👤 Профиль @{user_data.get('username', 'Unknown')}\n\n"
             f"💰 Баланс: {user_data.get('balance', 0):.2f} ₽\n"
             f"⭐️ Куплено звезд: {user_data.get('stars_bought', 0)}\n"
-            f"💎 Премиум подписок: {user_data.get('subscriptions_bought', 0)}\n"
             f"💸 Всего потрачено: {user_data.get('total_spent', 0):.2f} ₽\n"
             f"👥 Рефералов: {len(user_data.get('referrals', []))}\n"
             f"🎁 Реферальные начисления: {user_data.get('referral_earnings', 0):.2f} ₽\n"
