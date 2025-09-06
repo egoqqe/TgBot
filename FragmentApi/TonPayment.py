@@ -5,8 +5,7 @@ import requests
 import time
 import logging
 from typing import Dict, Optional, List
-from config import TON_WALLET_ADDRESS, TON_COMMISSION_PERCENT
-from FragmentApi.TonMonitor import TonMonitor
+from config import TON_WALLET_ADDRESS, TON_COMMISSION_PERCENT, TON_CENTER_API_KEY, TON_CENTER_API_URL
 
 class TonPayment:
     """Класс для работы с прямыми TON переводами"""
@@ -14,8 +13,42 @@ class TonPayment:
     def __init__(self):
         self.wallet_address = TON_WALLET_ADDRESS
         self.commission_percent = TON_COMMISSION_PERCENT
-        self.monitor = TonMonitor()
+        self.api_key = TON_CENTER_API_KEY
+        self.api_url = TON_CENTER_API_URL
         logging.info("✅ TON Payment инициализирован")
+    
+    def get_wallet_transactions(self, limit: int = 50) -> List[Dict]:
+        """Получает последние транзакции кошелька через TON Center API"""
+        try:
+            headers = {
+                'X-API-Key': self.api_key
+            }
+            
+            # Получаем последние транзакции
+            response = requests.get(
+                f"{self.api_url}/getTransactions",
+                params={
+                    'address': self.wallet_address,
+                    'limit': limit,
+                    'archival': True
+                },
+                headers=headers
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                if data.get('ok'):
+                    return data.get('result', [])
+                else:
+                    logging.error(f"TON Center API error: {data.get('error', 'Unknown error')}")
+                    return []
+            else:
+                logging.error(f"TON Center API HTTP error: {response.status_code}")
+                return []
+                
+        except Exception as e:
+            logging.error(f"Ошибка получения транзакций: {e}")
+            return []
     
     def rubles_to_ton(self, rubles: float) -> float:
         """Конвертирует рубли в TON по текущему курсу"""
@@ -93,7 +126,7 @@ class TonPayment:
         """Проверяет поступление TON на кошелек по комментарию"""
         try:
             # Получаем последние транзакции
-            transactions = self.monitor.get_wallet_transactions(50)
+            transactions = self.get_wallet_transactions(50)
             
             if transactions:
                 # Проверяем все транзакции за последние 30 минут
