@@ -1063,37 +1063,56 @@ def handle_callback(call: CallbackQuery):
                             f"❌ Ошибка проверки платежа\n\n"
                             f"🔍 Статус: {result.get('status', 'неизвестно')}\n"
                             f"📝 Сообщение: {result.get('message', 'Нет дополнительной информации')}\n\n"
-                            f"💬 Обратитесь в поддержку, если проблема повторяется"
+                            f"🔄 Попробуйте еще раз через несколько минут"
+                        )
+                        
+                        # Создаем клавиатуру с кнопкой повторной проверки
+                        keyboard = InlineKeyboardMarkup()
+                        keyboard.add(
+                            InlineKeyboardButton("🔍 Проверить снова", callback_data=f"check_ton_payment_{payment_id}")
+                        )
+                        keyboard.add(
+                            InlineKeyboardButton("❌ Отменить", callback_data="cancel")
                         )
                         
                         safe_edit_message(
                             chat_id=call.message.chat.id,
                             message_id=call.message.message_id,
                             text=error_text,
-                            reply_markup=create_back_keyboard()
+                            reply_markup=keyboard
                         )
                         
                 except Exception as e:
                     logging.error(f"Ошибка проверки TON платежа: {e}")
+                    
+                    # Создаем клавиатуру с кнопкой повторной проверки
+                    keyboard = InlineKeyboardMarkup()
+                    keyboard.add(
+                        InlineKeyboardButton("🔍 Проверить снова", callback_data=f"check_ton_payment_{payment_id}")
+                    )
+                    keyboard.add(
+                        InlineKeyboardButton("❌ Отменить", callback_data="cancel")
+                    )
+                    
                     safe_edit_message(
                         chat_id=call.message.chat.id,
                         message_id=call.message.message_id,
-                        text="❌ Ошибка проверки платежа. Попробуйте позже.",
-                        reply_markup=create_back_keyboard()
+                        text="❌ Ошибка проверки платежа. Попробуйте еще раз.",
+                        reply_markup=keyboard
                     )
             else:
                 safe_edit_message(
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
                     text="❌ TON платежи временно недоступны",
-                    reply_markup=create_back_keyboard()
+                    reply_markup=create_cancel_keyboard()
                 )
         else:
             safe_edit_message(
                 chat_id=call.message.chat.id,
                 message_id=call.message.message_id,
                 text="❌ Платеж не найден или истек",
-                reply_markup=create_back_keyboard()
+                reply_markup=create_cancel_keyboard()
             )
 
         
