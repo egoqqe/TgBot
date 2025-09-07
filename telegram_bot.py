@@ -325,22 +325,21 @@ def update_user_structure(user_data, user_id):
 # Функции для работы с реферальной системой
 def get_referral_discount(user_data):
     """
-    Вычисляет скидку на основе количества приглашенных друзей, пополнивших баланс на 250+ рублей
-    Лимит: максимум 3 реферала для максимальной скидки
+    Вычисляет скидку на основе количества приглашенных друзей, пополнивших баланс на 500+ рублей
+    Скидка только при наличии ровно 3 квалифицированных рефералов
     """
     referrals = user_data.get("referrals", [])
     qualified_referrals = 0
     
     for referral in referrals:
-        if referral.get("total_spent", 0) >= 250.0:
+        if referral.get("total_spent", 0) >= 500.0:
             qualified_referrals += 1
     
-    # Ограничиваем количество рефералов до 3
-    qualified_referrals = min(qualified_referrals, 3)
-    
-    # За каждого квалифицированного реферала скидка 0.01 рубля за звезду
-    discount_per_star = qualified_referrals * 0.01
-    return discount_per_star  # Максимальная скидка 0.03 рубля за звезду (3 реферала)
+    # Скидка только при наличии ровно 3 квалифицированных рефералов
+    if qualified_referrals >= 3:
+        return 0.05  # Скидка 0.05 рубля за звезду (цена становится 1.30 ₽)
+    else:
+        return 0.0  # Без скидки
 
 def update_referral_discount(user_data):
     """
@@ -569,16 +568,19 @@ def start(message: Message):
     # Получаем эффективную цену с учетом скидки
     effective_price = get_effective_star_price(user_data)
     discount = user_data.get("referral_discount", 0.0)
+    qualified_referrals = sum(1 for ref in user_data.get("referrals", []) if ref.get("total_spent", 0) >= 500.0)
     
     welcome_text = (
-        f"👋 Добро пожаловать\n\n"
-        f"💰 Ваш баланс: {user_balance:.2f} ₽\n\n"
-        f"✨ Здесь можно приобрести Telegram звезды без верификации и дешевле чем в приложении\n\n"
-        f"📈 Курс: 1 Stars = {effective_price:.2f} RUB"
+        f"👋 Добро пожаловать в сервис\n\n"
+        f"💰 Текущий баланс: {user_balance:.2f} ₽\n\n"
+        f"✨ Приобретайте Telegram Stars без верификации по выгодным ценам\n\n"
+        f"📈 Текущий курс: 1 Stars = {effective_price:.2f} RUB"
     )
     
     if discount > 0:
-        welcome_text += f"\n🎁 Ваша скидка: {discount:.2f} ₽ за звезду"
+        welcome_text += f"\n🎉 Специальная цена активирована!"
+    elif qualified_referrals > 0:
+        welcome_text += f"\n⏳ Прогресс: {qualified_referrals}/3 рефералов (требуется для специальной цены)"
     
     welcome_text += (
         f"\n\nС помощью бота куплено:\n"
@@ -611,14 +613,17 @@ def handle_callback(call: CallbackQuery):
         user_data = update_user_structure(user_data, user_id)
         effective_price = get_effective_star_price(user_data)
         discount = user_data.get("referral_discount", 0.0)
+        qualified_referrals = sum(1 for ref in user_data.get("referrals", []) if ref.get("total_spent", 0) >= 500.0)
         
         stars_text = (
-            "⭐️ Покупка Telegram Stars\n\n"
-            f"💰 Цена: {effective_price:.2f} ₽ за звезду"
+            "⭐️ Приобретение Telegram Stars\n\n"
+            f"💰 Текущая цена: {effective_price:.2f} ₽ за звезду"
         )
         
         if discount > 0:
-            stars_text += f"\n🎁 Ваша скидка: {discount:.2f} ₽ за звезду"
+            stars_text += f"\n🎉 Специальная цена активирована!"
+        elif qualified_referrals > 0:
+            stars_text += f"\n⏳ Прогресс: {qualified_referrals}/3 рефералов (требуется для специальной цены)"
         
         stars_text += (
             f"\n💳 Баланс: {user_data.get('balance', 0):.2f} ₽\n\n"
@@ -711,18 +716,23 @@ def handle_callback(call: CallbackQuery):
         user_data = update_user_structure(user_data, user_id)
         
         referrals = user_data.get("referrals", [])
-        qualified_referrals = sum(1 for ref in referrals if ref.get("total_spent", 0) >= 250.0)
+        qualified_referrals = sum(1 for ref in referrals if ref.get("total_spent", 0) >= 500.0)
         discount = user_data.get("referral_discount", 0.0)
         
+        if qualified_referrals >= 3:
+            referral_status = "1.30 ₽ за звезду (активирована)"
+        else:
+            referral_status = f"{STAR_PRICE:.2f} ₽ за звезду ({qualified_referrals}/3 рефералов)"
+        
         profile_text = (
-            f"👤 Профиль @{user_data.get('username', 'Unknown')}\n\n"
-            f"💰 Баланс: {user_data.get('balance', 0):.2f} ₽\n"
-            f"⭐️ Куплено звезд: {user_data.get('stars_bought', 0)}\n"
-            f"💸 Всего потрачено: {user_data.get('total_spent', 0):.2f} ₽\n\n"
+            f"👤 Профиль пользователя @{user_data.get('username', 'Unknown')}\n\n"
+            f"💰 Текущий баланс: {user_data.get('balance', 0):.2f} ₽\n"
+            f"⭐️ Приобретено звезд: {user_data.get('stars_bought', 0)}\n"
+            f"💸 Общие расходы: {user_data.get('total_spent', 0):.2f} ₽\n\n"
             f"🎁 Реферальная программа:\n"
-            f"👥 Рефералов: {len(referrals)}\n"
-            f"✅ Квалифицированных: {qualified_referrals}\n"
-            f"🎁 Скидка: {discount:.2f} ₽ за звезду"
+            f"👥 Приглашенных пользователей: {len(referrals)}\n"
+            f"✅ Квалифицированных рефералов: {qualified_referrals}\n"
+            f"🎯 Цена за звезду: {referral_status}"
         )
         
         # Отправляем изображение ава.jpeg с информацией профиля
@@ -1483,19 +1493,28 @@ def handle_callback(call: CallbackQuery):
         user_data = update_user_structure(user_data, user_id)
         
         referrals = user_data.get("referrals", [])
-        qualified_referrals = sum(1 for ref in referrals if ref.get("total_spent", 0) >= 250.0)
+        qualified_referrals = sum(1 for ref in referrals if ref.get("total_spent", 0) >= 500.0)
         discount = user_data.get("referral_discount", 0.0)
+        
+        if qualified_referrals >= 3:
+            price_text = "1.30 ₽ за звезду"
+            status_text = "🎉 Активирована!"
+        else:
+            price_text = f"{STAR_PRICE:.2f} ₽ за звезду"
+            status_text = f"⏳ Нужно еще {3 - qualified_referrals} рефералов"
         
         referral_text = (
             "🎁 Реферальная программа\n\n"
-            f"📊 Ваша статистика:\n"
-            f"👥 Всего рефералов: {len(referrals)}\n"
+            f"📊 Статистика:\n"
+            f"👥 Всего приглашенных: {len(referrals)}\n"
             f"✅ Квалифицированных: {qualified_referrals}\n"
-            f"🎁 Ваша скидка: {discount:.2f} ₽ за звезду\n\n"
-            f"💰 Как это работает:\n"
-            f"• За каждого приглашенного друга, пополнившего баланс на 250+ ₽\n"
-            f"• Вы получаете скидку 0.01 ₽ за звезду\n"
-            f"• Максимум 3 реферала = скидка 0.03 ₽ за звезду\n\n"
+            f"💰 Текущая цена: {price_text}\n"
+            f"🎯 Статус программы: {status_text}\n\n"
+            f"📋 Условия участия:\n"
+            f"• Пригласите 3 активных пользователей\n"
+            f"• Каждый должен пополнить баланс на 500+ ₽\n"
+            f"• Получите специальную цену 1.30 ₽ за звезду\n"
+            f"• Стандартная цена: {STAR_PRICE:.2f} ₽ за звезду\n\n"
             f"🔗 Ваша реферальная ссылка:\n"
             f"https://t.me/{bot.get_me().username}?start={user_data.get('referral_code', f'ref_{user_id}')}"
         )
@@ -1542,13 +1561,15 @@ def handle_callback(call: CallbackQuery):
         referral_link = f"https://t.me/{bot.get_me().username}?start={referral_code}"
         
         link_text = (
-            "🔗 Ваша реферальная ссылка:\n\n"
+            "🔗 Реферальная ссылка\n\n"
             f"<code>{referral_link}</code>\n\n"
-            f"📋 Код: <code>{referral_code}</code>\n\n"
-            f"💡 Поделитесь этой ссылкой с друзьями!\n"
-            f"За каждого друга, пополнившего баланс на 250+ ₽,\n"
-            f"вы получите скидку 0.01 ₽ за звезду.\n"
-            f"Максимум 3 реферала = скидка 0.03 ₽ за звезду."
+            f"📋 Уникальный код: <code>{referral_code}</code>\n\n"
+            f"💼 Инструкция по использованию:\n"
+            f"• Поделитесь ссылкой с потенциальными клиентами\n"
+            f"• Пригласите 3 активных пользователей\n"
+            f"• Каждый должен пополнить баланс на 500+ ₽\n"
+            f"• Получите специальную цену 1.30 ₽ за звезду\n"
+            f"• Стандартная цена: {STAR_PRICE:.2f} ₽ за звезду"
         )
         
         safe_edit_message(
@@ -1565,21 +1586,27 @@ def handle_callback(call: CallbackQuery):
         
         referrals = user_data.get("referrals", [])
         total_referrals = len(referrals)
-        qualified_referrals = sum(1 for ref in referrals if ref.get("total_spent", 0) >= 250.0)
+        qualified_referrals = sum(1 for ref in referrals if ref.get("total_spent", 0) >= 500.0)
         total_spent_by_referrals = sum(ref.get("total_spent", 0) for ref in referrals)
         total_stars_by_referrals = sum(ref.get("stars_bought", 0) for ref in referrals)
         discount = user_data.get("referral_discount", 0.0)
         
+        if qualified_referrals >= 3:
+            price_status = "1.30 ₽ за звезду (активирована)"
+        else:
+            price_status = f"{STAR_PRICE:.2f} ₽ за звезду (нужно еще {3 - qualified_referrals} рефералов)"
+        
         stats_text = (
-            "📊 Статистика рефералов\n\n"
-            f"👥 Всего рефералов: {total_referrals}\n"
+            "📊 Детальная статистика\n\n"
+            f"👥 Всего приглашенных: {total_referrals}\n"
             f"✅ Квалифицированных: {qualified_referrals}\n"
-            f"💰 Потратили рефералы: {total_spent_by_referrals:.2f} ₽\n"
-            f"⭐ Купили звезд: {total_stars_by_referrals}\n"
-            f"🎁 Ваша скидка: {discount:.2f} ₽ за звезду\n\n"
-            f"💡 Квалифицированный реферал - это пользователь,\n"
-            f"который пополнил баланс на 250+ ₽\n"
-            f"Максимум 3 реферала учитываются для скидки"
+            f"💰 Общий оборот рефералов: {total_spent_by_referrals:.2f} ₽\n"
+            f"⭐ Приобретено звезд: {total_stars_by_referrals}\n"
+            f"🎯 Ваша цена за звезду: {price_status}\n\n"
+            f"📋 Критерии квалификации:\n"
+            f"• Минимальное пополнение: 500 ₽\n"
+            f"• Требуется для активации: 3 квалифицированных реферала\n"
+            f"• Специальная цена: 1.30 ₽ за звезду"
         )
         
         safe_edit_message(
@@ -1598,13 +1625,23 @@ def handle_callback(call: CallbackQuery):
         stars_bought = user_data.get("stars_bought", 0)
         total_saved = stars_bought * discount
         
+        if discount > 0:
+            savings_text = f"💵 Всего сэкономлено: {total_saved:.2f} ₽"
+            status_text = "🎉 Скидка активирована!"
+        else:
+            savings_text = f"💵 Для получения скидки нужно 3 реферала"
+            status_text = f"⏳ Квалифицированных рефералов: {qualified_referrals}/3"
+        
         earnings_text = (
-            "💰 Ваш заработок от рефералов\n\n"
-            f"🎁 Скидка за звезду: {discount:.2f} ₽\n"
-            f"⭐ Куплено звезд: {stars_bought}\n"
-            f"💵 Всего сэкономлено: {total_saved:.2f} ₽\n\n"
-            f"💡 Чем больше рефералов, тем больше скидка!\n"
-            f"Максимальная скидка: 0.03 ₽ за звезду (3 реферала)"
+            "💰 Финансовая выгода\n\n"
+            f"🎯 Статус программы: {status_text}\n"
+            f"⭐ Приобретено звезд: {stars_bought}\n"
+            f"{savings_text}\n\n"
+            f"💼 Условия получения выгоды:\n"
+            f"• Пригласите 3 активных пользователей\n"
+            f"• Каждый должен пополнить баланс на 500+ ₽\n"
+            f"• Получите специальную цену 1.30 ₽ за звезду\n"
+            f"• Стандартная цена: {STAR_PRICE:.2f} ₽ за звезду"
         )
         
         safe_edit_message(
@@ -1768,15 +1805,19 @@ def handle_text(message: Message):
                 }
                 
                 discount = user_data.get("referral_discount", 0.0)
+                qualified_referrals = sum(1 for ref in user_data.get("referrals", []) if ref.get("total_spent", 0) >= 500.0)
+                
                 reply_text = (
                     f"⭐️ Количество: {stars_amount} звезд\n"
-                    f"💰 Стоимость: {cost:.2f} ₽"
+                    f"💰 Общая стоимость: {cost:.2f} ₽"
                 )
                 
                 if discount > 0:
                     original_cost = stars_amount * STAR_PRICE
                     saved = original_cost - cost
-                    reply_text += f"\n🎁 Сэкономлено: {saved:.2f} ₽"
+                    reply_text += f"\n🎉 Специальная цена: экономия {saved:.2f} ₽"
+                elif qualified_referrals > 0:
+                    reply_text += f"\n⏳ Прогресс: {qualified_referrals}/3 рефералов (требуется для специальной цены)"
                 
                 reply_text += "\n👤 Введите юзернейм получателя (например: @username или username):"
                 
