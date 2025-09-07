@@ -31,7 +31,12 @@ else:
     logging.info("⚠️ APays отключен. Для включения получите client_id и установите APAYS_ENABLED = True")
 
 # Инициализация TON Payment
-ton_payment = TonPayment()
+try:
+    ton_payment = TonPayment()
+    logging.info("✅ TON Payment инициализирован")
+except Exception as e:
+    logging.error(f"❌ Ошибка инициализации TON Payment: {e}")
+    ton_payment = None
 
 # Импортируем константы поддержки
 from config import SUPPORT_USERNAME, SUPPORT_CHAT_ID
@@ -1200,6 +1205,15 @@ def handle_callback(call: CallbackQuery):
             
             try:
                 # Проверяем статус заказа
+                if not APAYS_ENABLED or not apays:
+                    safe_edit_message(
+                        chat_id=call.message.chat.id,
+                        message_id=call.message.message_id,
+                        text="❌ APays временно недоступен",
+                        reply_markup=create_back_keyboard()
+                    )
+                    return
+                
                 status_result = apays.get_order_status(order_id)
                 
                 if status_result.get('status') and status_result.get('order_status'):
@@ -1341,6 +1355,15 @@ def handle_callback(call: CallbackQuery):
                 expected_comment = payment_info.get("comment")
                 
                 # Проверяем статус TON транзакции
+                if not TON_ENABLED or not ton_payment:
+                    safe_edit_message(
+                        chat_id=call.message.chat.id,
+                        message_id=call.message.message_id,
+                        text="❌ TON платежи временно недоступны",
+                        reply_markup=create_back_keyboard()
+                    )
+                    return
+                
                 status_result = ton_payment.check_ton_transaction(order_id, expected_comment)
                 
                 if status_result.get("status") == "approved":
@@ -2176,6 +2199,14 @@ def handle_text(message: Message):
                 
                 elif payment_method == "ton":
                     # Обработка TON перевода
+                    if not TON_ENABLED or not ton_payment:
+                        bot.reply_to(
+                            message,
+                            "⚠️ TON платежи временно недоступны. Выберите другой способ оплаты.",
+                            reply_markup=create_cancel_keyboard()
+                        )
+                        return
+                    
                     payment_data = ton_payment.create_payment_request(user_id, amount)
                     
                     if "error" not in payment_data:
