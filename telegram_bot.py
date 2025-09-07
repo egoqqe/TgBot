@@ -982,7 +982,7 @@ def handle_callback(call: CallbackQuery):
                 return
             
             # Создаем платеж через TON
-            payment_data = ton_payment.create_payment_request(user_id, amount)
+            payment_data = ton_payment.create_payment_request(int(user_id), amount)
             if payment_data and "error" not in payment_data:
                 # Сохраняем данные платежа
                 user_states[user_id] = {
@@ -2365,7 +2365,7 @@ def handle_callback(call: CallbackQuery):
                 return
             
             # Создаем платеж через TON
-            payment_data = ton_payment.create_payment_request(user_id, needed_amount)
+            payment_data = ton_payment.create_payment_request(int(user_id), needed_amount)
             if payment_data and "error" not in payment_data:
                 # Сохраняем данные платежа, сохраняя информацию о первоначальной покупке
                 new_state = {
@@ -2596,7 +2596,7 @@ def handle_callback(call: CallbackQuery):
                 return
             
             # Создаем платеж через TON
-            payment_data = ton_payment.create_payment_request(user_id, amount)
+            payment_data = ton_payment.create_payment_request(int(user_id), amount)
             if payment_data and "error" not in payment_data:
                 # Сохраняем данные платежа
                 user_states[user_id] = {
@@ -2756,7 +2756,7 @@ def handle_text(message: Message):
                         )
                         return
                     
-                    payment_data = ton_payment.create_payment_request(user_id, amount)
+                    payment_data = ton_payment.create_payment_request(int(user_id), amount)
                     
                     if "error" not in payment_data:
                         user_states[user_id] = {
