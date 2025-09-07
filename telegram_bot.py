@@ -524,12 +524,35 @@ def create_recipient_keyboard():
     return keyboard
 
 # Создаем клавиатуру для пополнения баланса
-def create_topup_keyboard():
+def create_topup_keyboard(needed_amount=None):
     keyboard = InlineKeyboardMarkup(row_width=2)
-    keyboard.add(
-        InlineKeyboardButton("💳 APays (+7%)", callback_data="topup_apays"),
-        InlineKeyboardButton("⚡ TON", callback_data="topup_ton")
-    )
+    
+    # Если указана нужная сумма, проверяем доступность способов оплаты
+    if needed_amount is not None:
+        apays_available = APAYS_ENABLED and needed_amount >= APAYS_MIN_AMOUNT
+        ton_available = TON_ENABLED and needed_amount >= TON_MIN_AMOUNT
+        
+        if apays_available:
+            commission_rate = APAYS_COMMISSION_PERCENT / 100
+            amount_with_commission = needed_amount / (1 - commission_rate)
+            keyboard.add(
+                InlineKeyboardButton(f"💳 APays (+{APAYS_COMMISSION_PERCENT}%) - {amount_with_commission:.2f} ₽", callback_data="topup_apays")
+            )
+        if ton_available:
+            keyboard.add(
+                InlineKeyboardButton(f"⚡ TON (без комиссии) - {needed_amount:.2f} ₽", callback_data="topup_ton")
+            )
+    else:
+        # Если сумма не указана, показываем все доступные способы
+        if APAYS_ENABLED:
+            keyboard.add(
+                InlineKeyboardButton("💳 APays (+7%)", callback_data="topup_apays")
+            )
+        if TON_ENABLED:
+            keyboard.add(
+                InlineKeyboardButton("⚡ TON", callback_data="topup_ton")
+            )
+    
     keyboard.add(
         InlineKeyboardButton(f"{EMOJIS['back']} Назад", callback_data="back_main")
     )
@@ -2672,12 +2695,18 @@ def handle_text(message: Message):
                         f"💰 Текущий баланс: {user_data.get('balance', 0):.2f} ₽\n"
                         f"💸 Требуется: {cost:.2f} ₽\n"
                         f"💸 Не хватает: {needed_amount:.2f} ₽\n\n"
-                        f"💳 Пополните баланс для продолжения покупки"
                     )
+                    
+                    # Добавляем предупреждение о недоступности APays, если сумма меньше 100₽
+                    if needed_amount < APAYS_MIN_AMOUNT:
+                        insufficient_text += f"⚠️ APays недоступен (минимум {APAYS_MIN_AMOUNT} ₽)\n\n"
+                    
+                    insufficient_text += "💳 Пополните баланс для продолжения покупки"
+                    
                     bot.reply_to(
                         message,
                         insufficient_text,
-                        reply_markup=create_topup_keyboard()
+                        reply_markup=create_topup_keyboard(needed_amount)
                     )
                     return
                     
@@ -2783,17 +2812,25 @@ def handle_text(message: Message):
                 topup_text = (
                     f"💰 Недостаточно средств\n\n"
                     f"💸 Нужно пополнить: {amount:.2f} ₽\n\n"
-                    f"Выберите способ пополнения:"
                 )
                 
+                # Проверяем, можно ли использовать APays
+                apays_available = APAYS_ENABLED and amount >= APAYS_MIN_AMOUNT
+                ton_available = TON_ENABLED and amount >= TON_MIN_AMOUNT
+                
+                if not apays_available and amount < APAYS_MIN_AMOUNT:
+                    topup_text += f"⚠️ APays недоступен (минимум {APAYS_MIN_AMOUNT} ₽)\n\n"
+                
+                topup_text += "Выберите способ пополнения:"
+                
                 keyboard = InlineKeyboardMarkup()
-                if APAYS_ENABLED:
+                if apays_available:
                     commission_rate = APAYS_COMMISSION_PERCENT / 100
                     amount_with_commission = amount / (1 - commission_rate)
                     keyboard.add(
                         InlineKeyboardButton(f"💳 APays (+{APAYS_COMMISSION_PERCENT}%) - {amount_with_commission:.2f} ₽", callback_data="topup_apays")
                     )
-                if TON_ENABLED:
+                if ton_available:
                     keyboard.add(
                         InlineKeyboardButton(f"⚡ TON (без комиссии) - {amount:.2f} ₽", callback_data="topup_ton")
                     )
