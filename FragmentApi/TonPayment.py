@@ -101,7 +101,7 @@ class TonPayment:
             # Используем последние 3 цифры user_id + последние 3 цифры timestamp для краткости
             user_suffix = str(user_id)[-3:]  # Последние 3 цифры user_id
             time_suffix = str(int(time.time()))[-3:]  # Последние 3 цифры timestamp
-            comment = f"T{user_suffix}{time_suffix}"  # Например: T188065
+            comment = f"R{user_suffix}{time_suffix}"  # Например: R188065
             
             payment_data = {
                 "payment_id": payment_id,
@@ -160,8 +160,8 @@ class TonPayment:
                                         "expected_comment": expected_comment,
                                         "transaction": tx
                                     }
-                                # Дополнительная проверка: ищем платежи с похожими комментариями (начинающимися с T)
-                                elif expected_comment and expected_comment.startswith("T") and tx_comment.startswith("T") and len(tx_comment) >= 4:
+                                # Дополнительная проверка: ищем платежи с похожими комментариями (начинающимися с R)
+                                elif expected_comment and expected_comment.startswith("R") and tx_comment.startswith("R") and len(tx_comment) >= 4:
                                     # Проверяем, совпадают ли последние цифры
                                     if expected_comment[-3:] in tx_comment or tx_comment[-3:] in expected_comment:
                                         logging.info(f"✅ Найден платеж с похожим комментарием: {tx_comment} (ожидался: {expected_comment}), сумма: {received_amount:.4f} TON")

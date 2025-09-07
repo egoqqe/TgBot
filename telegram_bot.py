@@ -859,6 +859,7 @@ def handle_callback(call: CallbackQuery):
                     "payment_id": payment_data["payment_id"],
                     "comment": payment_data["comment"],
                     "amount_ton": payment_data["amount_ton"],
+                    "wallet_address": payment_data["wallet_address"],
                     "created_at": int(time.time())
                 }
                 
@@ -1035,10 +1036,14 @@ def handle_callback(call: CallbackQuery):
                     elif result.get("status") == "pending":
                         # Платеж еще не поступил
                         pending_text = (
-                            f"⏳ Платеж еще не поступил\n\n"
-                            f"💸 Ожидаем: {user_state.get('amount_ton', 0):.4f} TON\n"
-                            f"💬 С комментарием: <code>{user_state.get('comment', '')}</code>\n\n"
-                            f"🔄 Попробуйте еще раз через несколько минут"
+                            f"⏳ TON платеж обрабатывается...\n\n"
+                            f"💰 Сумма: {user_state.get('amount', 0):.2f} ₽\n"
+                            f"🆔 ID заказа: {payment_id}\n\n"
+                            f"💸 Сумма к отправке: {user_state.get('amount_ton', 0):.4f} TON\n"
+                            f"💳 Адрес для оплаты: <code>{user_state.get('wallet_address', '')}</code>\n"
+                            f"⚠️ Комментарий: <code>{user_state.get('comment', '')}</code>\n\n"
+                            f"‼️ Обязательно указывайте комментарий при отправке монет!\n\n"
+                            f"Попробуйте проверить еще раз через несколько минут."
                         )
                         
                         # Создаем клавиатуру с кнопкой повторной проверки
@@ -1060,10 +1065,14 @@ def handle_callback(call: CallbackQuery):
                     else:
                         # Ошибка проверки
                         error_text = (
-                            f"❌ Ошибка проверки платежа\n\n"
-                            f"🔍 Статус: {result.get('status', 'неизвестно')}\n"
-                            f"📝 Сообщение: {result.get('message', 'Нет дополнительной информации')}\n\n"
-                            f"🔄 Попробуйте еще раз через несколько минут"
+                            f"⏳ TON платеж обрабатывается...\n\n"
+                            f"💰 Сумма: {user_state.get('amount', 0):.2f} ₽\n"
+                            f"🆔 ID заказа: {payment_id}\n\n"
+                            f"💸 Сумма к отправке: {user_state.get('amount_ton', 0):.4f} TON\n"
+                            f"💳 Адрес для оплаты: <code>{user_state.get('wallet_address', '')}</code>\n"
+                            f"⚠️ Комментарий: <code>{user_state.get('comment', '')}</code>\n\n"
+                            f"‼️ Обязательно указывайте комментарий при отправке монет!\n\n"
+                            f"Попробуйте проверить еще раз через несколько минут."
                         )
                         
                         # Создаем клавиатуру с кнопкой повторной проверки
@@ -1094,10 +1103,21 @@ def handle_callback(call: CallbackQuery):
                         InlineKeyboardButton("❌ Отменить", callback_data="cancel")
                     )
                     
+                    error_text = (
+                        f"⏳ TON платеж обрабатывается...\n\n"
+                        f"💰 Сумма: {user_state.get('amount', 0):.2f} ₽\n"
+                        f"🆔 ID заказа: {payment_id}\n\n"
+                        f"💸 Сумма к отправке: {user_state.get('amount_ton', 0):.4f} TON\n"
+                        f"💳 Адрес для оплаты: <code>{user_state.get('wallet_address', '')}</code>\n"
+                        f"⚠️ Комментарий: <code>{user_state.get('comment', '')}</code>\n\n"
+                        f"‼️ Обязательно указывайте комментарий при отправке монет!\n\n"
+                        f"Попробуйте проверить еще раз через несколько минут."
+                    )
+                    
                     safe_edit_message(
                         chat_id=call.message.chat.id,
                         message_id=call.message.message_id,
-                        text="❌ Ошибка проверки платежа. Попробуйте еще раз.",
+                        text=error_text,
                         reply_markup=keyboard
                     )
             else:
@@ -2285,6 +2305,7 @@ def handle_callback(call: CallbackQuery):
                     "payment_id": payment_data["payment_id"],
                     "comment": payment_data["comment"],
                     "amount_ton": payment_data["amount_ton"],
+                    "wallet_address": payment_data["wallet_address"],
                     "created_at": int(time.time())
                 }
                 
@@ -2590,7 +2611,16 @@ def handle_text(message: Message):
         # Пользователь может ввести новую сумму для пополнения
         try:
             amount = float(message.text)
-            if PAYMENT_MIN_AMOUNT <= amount <= PAYMENT_MAX_AMOUNT:
+            
+            # Если сумма меньше минимальной, устанавливаем минимальную сумму 50 рублей
+            if amount < 50:
+                amount = 50
+                bot.reply_to(
+                    message,
+                    f"⚠️ Минимальная сумма пополнения: 50 ₽\nУстановлена сумма: {amount:.2f} ₽"
+                )
+            
+            if amount <= PAYMENT_MAX_AMOUNT:
                 # Обновляем нужную сумму
                 user_states[user_id]["needed_amount"] = amount
                 
