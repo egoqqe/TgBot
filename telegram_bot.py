@@ -2074,7 +2074,7 @@ def handle_text(message: Message):
     users_data = load_users_data()
     user_data = users_data.get(user_id, {})
     user_data = update_user_structure(user_data, user_id)
-
+    
     if user_state.get("state") == "waiting_topup_amount":
         payment_method = user_state.get("payment_method", "apays")
         
@@ -2430,6 +2430,10 @@ if __name__ == "__main__":
                 print("🔄 Ожидание 30 секунд перед перезапуском...")
                 import time
                 time.sleep(30)
+            elif "APaysPayment" in str(e):
+                print("⚠️ Ошибка APays - перезапуск через 10 секунд...")
+                import time
+                time.sleep(10)
             else:
                 print("🔄 Перезапуск через 5 секунд...")
                 import time
