@@ -3,6 +3,7 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, Message, C
 import json
 import os
 import time
+import asyncio
 from datetime import datetime
 from config import BOT_TOKEN, EMOJIS, APAYS_CLIENT_ID, APAYS_SECRET_KEY, APAYS_BASE_URL, PAYMENT_MIN_AMOUNT, PAYMENT_MAX_AMOUNT, APAYS_ENABLED, TON_WALLET_ADDRESS, TON_COMMISSION_PERCENT, TON_ENABLED, APAYS_COMMISSION_PERCENT, APAYS_MIN_AMOUNT, TON_MIN_AMOUNT
 from FragmentApi.BuyStars import buy_stars
@@ -288,6 +289,98 @@ def send_to_support(message_text):
         logging.info(f"✅ Сообщение отправлено в техподдержку: {SUPPORT_USERNAME}")
     except Exception as e:
         logging.error(f"❌ Ошибка отправки в техподдержку по username: {e}")
+
+
+# Функция для получения баланса TON кошелька
+async def get_ton_balance():
+    """
+    Получает баланс TON кошелька для логирования
+    """
+    try:
+        from config import WALLET_MNEMONICS
+        from wallet.Transactions import Transactions
+        
+        config = {'testnet': False, 'TON_NETWORK': 'mainnet'}
+        transactions = Transactions(config)
+        
+        balance_result = await transactions.get_balance(WALLET_MNEMONICS)
+        if balance_result.get('success'):
+            return balance_result.get('balance_ton', 0)
+        else:
+            logging.error(f"❌ Ошибка получения баланса TON: {balance_result}")
+            return 0
+    except Exception as e:
+        logging.error(f"❌ Критическая ошибка получения баланса TON: {e}")
+        return 0
+
+
+# Функция для логирования покупки звезд
+async def log_stars_purchase(user_id, username, stars_amount, cost, recipient, success, error_message=None):
+    """
+    Отправляет лог о покупке звезд в техподдержку
+    """
+    try:
+        # Получаем баланс TON до и после покупки
+        ton_balance_before = await get_ton_balance()
+        
+        # Формируем сообщение
+        status_emoji = "✅" if success else "❌"
+        status_text = "УСПЕШНО" if success else "ОШИБКА"
+        
+        log_message = (
+            f"🛒 <b>ПОКУПКА ЗВЕЗД</b>\n\n"
+            f"👤 <b>Пользователь:</b> @{username} (ID: {user_id})\n"
+            f"⭐ <b>Количество звезд:</b> {stars_amount}\n"
+            f"💰 <b>Стоимость:</b> {cost:.2f} ₽\n"
+            f"🎯 <b>Получатель:</b> @{recipient}\n"
+            f"⚡ <b>Баланс TON до:</b> {ton_balance_before:.6f} TON\n"
+            f"📊 <b>Статус:</b> {status_emoji} {status_text}\n"
+            f"🕐 <b>Время:</b> {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}"
+        )
+        
+        if not success and error_message:
+            log_message += f"\n❌ <b>Ошибка:</b> {error_message}"
+        
+        # Отправляем лог в техподдержку
+        send_to_support(log_message)
+        logging.info(f"📤 Лог покупки звезд отправлен в техподдержку: {status_text}")
+        
+    except Exception as e:
+        logging.error(f"❌ Ошибка отправки лога покупки звезд: {e}")
+
+
+# Функция для логирования пополнения баланса
+async def log_balance_topup(user_id, username, amount, payment_method, success, error_message=None):
+    """
+    Отправляет лог о пополнении баланса в техподдержку
+    """
+    try:
+        # Получаем баланс TON
+        ton_balance = await get_ton_balance()
+        
+        # Формируем сообщение
+        status_emoji = "✅" if success else "❌"
+        status_text = "УСПЕШНО" if success else "ОШИБКА"
+        
+        log_message = (
+            f"💳 <b>ПОПОЛНЕНИЕ БАЛАНСА</b>\n\n"
+            f"👤 <b>Пользователь:</b> @{username} (ID: {user_id})\n"
+            f"💰 <b>Сумма:</b> {amount:.2f} ₽\n"
+            f"💸 <b>Способ оплаты:</b> {payment_method}\n"
+            f"⚡ <b>Баланс TON:</b> {ton_balance:.6f} TON\n"
+            f"📊 <b>Статус:</b> {status_emoji} {status_text}\n"
+            f"🕐 <b>Время:</b> {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}"
+        )
+        
+        if not success and error_message:
+            log_message += f"\n❌ <b>Ошибка:</b> {error_message}"
+        
+        # Отправляем лог в техподдержку
+        send_to_support(log_message)
+        logging.info(f"📤 Лог пополнения баланса отправлен в техподдержку: {status_text}")
+        
+    except Exception as e:
+        logging.error(f"❌ Ошибка отправки лога пополнения баланса: {e}")
 
 
 
@@ -1056,6 +1149,15 @@ def handle_callback(call: CallbackQuery):
                         users_data[user_id] = user_data
                         save_users_data(users_data)
                         
+                        # Отправляем лог о пополнении в техподдержку
+                        asyncio.run(log_balance_topup(
+                            user_id=user_id,
+                            username=user_data.get('username', 'Unknown'),
+                            amount=amount_rub,
+                            payment_method="TON (автопополнение)",
+                            success=True
+                        ))
+                        
                         # Проверяем, есть ли информация о первоначальной покупке
                         original_purchase = user_state.get("original_purchase")
                         
@@ -1389,7 +1491,6 @@ def handle_callback(call: CallbackQuery):
         )
 
         try:
-            import asyncio
             result = asyncio.run(
                 buy_stars(
                     recipient=recipient,
@@ -1432,6 +1533,16 @@ def handle_callback(call: CallbackQuery):
                 
                 save_users_data(users_data)
 
+                # Отправляем лог о покупке в техподдержку
+                asyncio.run(log_stars_purchase(
+                    user_id=user_id,
+                    username=user_data.get('username', 'Unknown'),
+                    stars_amount=stars_amount,
+                    cost=cost,
+                    recipient=recipient,
+                    success=True
+                ))
+
                 # Отправляем изображение чек.jpeg с сообщением об успешной покупке
                 success_text = (
                     f"✅ Успешно! {stars_amount} звёзд отправлены пользователю @{recipient}\n"
@@ -1452,6 +1563,17 @@ def handle_callback(call: CallbackQuery):
                 elif isinstance(result, str):
                     error_details = result
                 
+                # Отправляем лог об ошибке покупки в техподдержку
+                asyncio.run(log_stars_purchase(
+                    user_id=user_id,
+                    username=user_data.get('username', 'Unknown'),
+                    stars_amount=stars_amount,
+                    cost=cost,
+                    recipient=recipient,
+                    success=False,
+                    error_message=error_details
+                ))
+                
                 # Проверяем, является ли ошибка связанной с невалидным username
                 if isinstance(result, dict) and "username" in error_details.lower():
                     # Показываем сообщение о невалидном username
@@ -1462,17 +1584,6 @@ def handle_callback(call: CallbackQuery):
                         reply_markup=create_back_keyboard()
                     )
                 else:
-                    # Отправляем детальное сообщение админу только для других ошибок
-                    support_message = (
-                        f"⚠️ Ошибка покупки звезд!\n"
-                        f"Пользователь ID: {user_id}\n"
-                        f"Получатель: @{recipient}\n"
-                        f"Количество звезд: {stars_amount}\n"
-                        f"Стоимость: {cost:.2f} ₽\n"
-                        f"Детали ошибки: {error_details}"
-                    )
-                    send_to_support(support_message)
-                    
                     # Показываем простое сообщение пользователю
                     safe_edit_message(
                         chat_id=call.message.chat.id,
@@ -1539,6 +1650,15 @@ def handle_callback(call: CallbackQuery):
                         update_referral_stats(user_id, users_data)
                         
                         save_users_data(users_data)
+                        
+                        # Отправляем лог о пополнении в техподдержку
+                        asyncio.run(log_balance_topup(
+                            user_id=user_id,
+                            username=user_data.get('username', 'Unknown'),
+                            amount=amount,
+                            payment_method="APays",
+                            success=True
+                        ))
                         
                         # Очищаем состояние
                         user_states.pop(user_id, None)
@@ -1686,6 +1806,15 @@ def handle_callback(call: CallbackQuery):
                     update_referral_stats(user_id, users_data)
                     
                     save_users_data(users_data)
+                    
+                    # Отправляем лог о пополнении в техподдержку
+                    asyncio.run(log_balance_topup(
+                        user_id=user_id,
+                        username=user_data.get('username', 'Unknown'),
+                        amount=amount,
+                        payment_method="TON",
+                        success=True
+                    ))
                     
                     # Очищаем состояние
                     user_states.pop(user_id, None)
@@ -1889,16 +2018,15 @@ def handle_callback(call: CallbackQuery):
                     reply_markup=create_back_keyboard()
                 )
                 
-                # Отправляем уведомление в техподдержку
-                support_message = (
-                    f"✅ Успешная покупка звезд!\n"
-                    f"Пользователь ID: {user_id}\n"
-                    f"Получатель: @{recipient}\n"
-                    f"Количество звезд: {stars_amount}\n"
-                    f"Стоимость: {cost:.2f} ₽\n"
-                    f"Время: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}"
-                )
-                send_to_support(support_message)
+                # Отправляем лог о покупке в техподдержку
+                asyncio.run(log_stars_purchase(
+                    user_id=user_id,
+                    username=user_data.get('username', 'Unknown'),
+                    stars_amount=stars_amount,
+                    cost=cost,
+                    recipient=recipient,
+                    success=True
+                ))
                 
             else:
                 # Ошибка покупки
@@ -1922,17 +2050,16 @@ def handle_callback(call: CallbackQuery):
                         reply_markup=create_back_keyboard()
                     )
                 
-                # Отправляем уведомление в техподдержку
-                support_message = (
-                    f"⚠️ Ошибка покупки звезд!\n"
-                    f"Пользователь ID: {user_id}\n"
-                    f"Получатель: @{recipient}\n"
-                    f"Количество звезд: {stars_amount}\n"
-                    f"Стоимость: {cost:.2f} ₽\n"
-                    f"Ошибка: {error_details}\n"
-                    f"Время: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}"
-                )
-                send_to_support(support_message)
+                # Отправляем лог об ошибке покупки в техподдержку
+                asyncio.run(log_stars_purchase(
+                    user_id=user_id,
+                    username=user_data.get('username', 'Unknown'),
+                    stars_amount=stars_amount,
+                    cost=cost,
+                    recipient=recipient,
+                    success=False,
+                    error_message=error_details
+                ))
                 
         except Exception as e:
             logging.error(f"Ошибка покупки звезд: {e}")
@@ -2969,6 +3096,15 @@ def auto_check_ton_payments():
                             user_data['balance'] = user_data.get('balance', 0) + amount_rub
                             users_data[user_id] = user_data
                             save_users_data(users_data)
+                            
+                            # Отправляем лог о пополнении в техподдержку
+                            asyncio.run(log_balance_topup(
+                                user_id=user_id,
+                                username=user_data.get('username', 'Unknown'),
+                                amount=amount_rub,
+                                payment_method="TON (автопополнение)",
+                                success=True
+                            ))
                             
                             # Проверяем, есть ли информация о первоначальной покупке
                             original_purchase = user_state.get("original_purchase")
