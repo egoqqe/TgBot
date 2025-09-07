@@ -461,10 +461,19 @@ def create_recipient_keyboard():
 def create_topup_keyboard():
     keyboard = InlineKeyboardMarkup(row_width=2)
     keyboard.add(
-        InlineKeyboardButton("💳 APays", callback_data="topup_apays"),
+        InlineKeyboardButton("💳 APays (+7%)", callback_data="topup_apays"),
         InlineKeyboardButton("⚡ TON", callback_data="topup_ton")
     )
     keyboard.add(
+        InlineKeyboardButton(f"{EMOJIS['back']} Назад", callback_data="back_main")
+    )
+    return keyboard
+
+# Создаем клавиатуру для изменения суммы пополнения
+def create_amount_change_keyboard():
+    keyboard = InlineKeyboardMarkup(row_width=2)
+    keyboard.add(
+        InlineKeyboardButton("💰 Другая сумма", callback_data="change_amount"),
         InlineKeyboardButton(f"{EMOJIS['back']} Назад", callback_data="back_main")
     )
     return keyboard
@@ -686,41 +695,79 @@ def handle_callback(call: CallbackQuery):
         
     elif call.data == "payment_method_apays":
         # Выбран APays
-        user_states[user_id] = {
-            "state": "waiting_topup_amount",
-            "payment_method": "apays"
-        }
+        user_state = user_states.get(user_id, {})
+        custom_amount = user_state.get("custom_amount")
         
-        topup_text = (
-            "⚪️ Выбран метод: APays\n\n"
-            "✏️ Введите, сколько вы хотите пополнить RUB:"
-        )
-        
-        safe_edit_message(
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            text=topup_text,
-            reply_markup=create_cancel_keyboard()
-        )
+        if custom_amount:
+            # Если есть пользовательская сумма, сразу переходим к пополнению
+            user_states[user_id] = {
+                "state": "waiting_topup_amount",
+                "payment_method": "apays"
+            }
+            
+            # Создаем фиктивное сообщение для вызова обработки
+            fake_message = type('obj', (object,), {
+                'text': str(custom_amount),
+                'chat': call.message.chat,
+                'from_user': call.message.from_user
+            })
+            handle_text(fake_message)
+        else:
+            # Обычный процесс ввода суммы
+            user_states[user_id] = {
+                "state": "waiting_topup_amount",
+                "payment_method": "apays"
+            }
+            
+            topup_text = (
+                "⚪️ Выбран метод: APays\n\n"
+                "✏️ Введите, сколько вы хотите пополнить RUB:"
+            )
+            
+            safe_edit_message(
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                text=topup_text,
+                reply_markup=create_cancel_keyboard()
+            )
         
     elif call.data == "payment_method_ton":
         # Выбран TON перевод
-        user_states[user_id] = {
-            "state": "waiting_topup_amount",
-            "payment_method": "ton"
-        }
+        user_state = user_states.get(user_id, {})
+        custom_amount = user_state.get("custom_amount")
         
-        topup_text = (
-            "⚪️ Выбран метод: Прямой перевод TON\n\n"
-            "✏️ Введите, сколько вы хотите пополнить RUB:"
-        )
-        
-        safe_edit_message(
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            text=topup_text,
-            reply_markup=create_cancel_keyboard()
-        )
+        if custom_amount:
+            # Если есть пользовательская сумма, сразу переходим к пополнению
+            user_states[user_id] = {
+                "state": "waiting_topup_amount",
+                "payment_method": "ton"
+            }
+            
+            # Создаем фиктивное сообщение для вызова обработки
+            fake_message = type('obj', (object,), {
+                'text': str(custom_amount),
+                'chat': call.message.chat,
+                'from_user': call.message.from_user
+            })
+            handle_text(fake_message)
+        else:
+            # Обычный процесс ввода суммы
+            user_states[user_id] = {
+                "state": "waiting_topup_amount",
+                "payment_method": "ton"
+            }
+            
+            topup_text = (
+                "⚪️ Выбран метод: Прямой перевод TON\n\n"
+                "✏️ Введите, сколько вы хотите пополнить RUB:"
+            )
+            
+            safe_edit_message(
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                text=topup_text,
+                reply_markup=create_cancel_keyboard()
+            )
         
     elif call.data == "profile":
         # Показываем профиль пользователя
@@ -1665,30 +1712,68 @@ def handle_callback(call: CallbackQuery):
         )
         
     elif call.data == "topup_apays":
-        # Переходим к пополнению через APays
+        # Переходим к пополнению через APays с нужной суммой
         user_data = users_data.get(user_id, {})
         user_data = update_user_structure(user_data, user_id)
         
-        topup_text = (
-            "💳 Пополнение баланса\n\n"
-            f"💰 Текущий баланс: {user_data.get('balance', 0):.2f} ₽\n"
-            f"💸 Минимальная сумма: {PAYMENT_MIN_AMOUNT} ₽\n"
-            f"💸 Максимальная сумма: {PAYMENT_MAX_AMOUNT} ₽\n\n"
-            "🔽 Выберите способ оплаты:"
-        )
+        # Получаем нужную сумму из состояния пользователя (если есть)
+        user_state = user_states.get(user_id, {})
+        needed_amount = user_state.get("needed_amount", 0)
         
-        # Создаем клавиатуру с выбором способа оплаты
-        keyboard = InlineKeyboardMarkup()
-        if APAYS_ENABLED and apays:
-            keyboard.add(
-                InlineKeyboardButton(f"💳 APays (+{APAYS_COMMISSION_PERCENT}%)", callback_data="payment_method_apays")
+        if needed_amount > 0:
+            # Рассчитываем сумму с комиссией APays
+            commission_rate = APAYS_COMMISSION_PERCENT / 100
+            amount_with_commission = needed_amount / (1 - commission_rate)
+            amount_with_commission = round(amount_with_commission, 2)
+            
+            topup_text = (
+                f"⚪️ Выбран метод: APays\n\n"
+                f"💰 Текущий баланс: {user_data.get('balance', 0):.2f} ₽\n"
+                f"💸 Нужно пополнить: {needed_amount:.2f} ₽\n"
+                f"💳 К доплате (с комиссией {APAYS_COMMISSION_PERCENT}%): {amount_with_commission:.2f} ₽\n\n"
+                f"🔽 Выберите действие:"
             )
-        keyboard.add(
-            InlineKeyboardButton(f"⚡ Прямой перевод TON (Без комиссии)", callback_data="payment_method_ton")
-        )
-        keyboard.add(
-            InlineKeyboardButton(f"{EMOJIS['back']} Назад", callback_data="back_main")
-        )
+            
+            # Сохраняем данные для пополнения
+            user_states[user_id] = {
+                "state": "waiting_topup_amount",
+                "payment_method": "apays",
+                "needed_amount": needed_amount,
+                "amount_with_commission": amount_with_commission
+            }
+            
+            # Создаем клавиатуру с возможностью изменить сумму
+            keyboard = InlineKeyboardMarkup()
+            keyboard.add(
+                InlineKeyboardButton(f"💳 Пополнить {amount_with_commission:.2f} ₽", callback_data="confirm_topup_apays")
+            )
+            keyboard.add(
+                InlineKeyboardButton("💰 Другая сумма", callback_data="change_amount")
+            )
+            keyboard.add(
+                InlineKeyboardButton(f"{EMOJIS['back']} Назад", callback_data="back_main")
+            )
+        else:
+            # Если нет нужной суммы, показываем обычное меню
+            topup_text = (
+                "💳 Пополнение баланса\n\n"
+                f"💰 Текущий баланс: {user_data.get('balance', 0):.2f} ₽\n"
+                f"💸 Минимальная сумма: {PAYMENT_MIN_AMOUNT} ₽\n"
+                f"💸 Максимальная сумма: {PAYMENT_MAX_AMOUNT} ₽\n\n"
+                "🔽 Выберите способ оплаты:"
+            )
+            
+            keyboard = InlineKeyboardMarkup()
+            if APAYS_ENABLED and apays:
+                keyboard.add(
+                    InlineKeyboardButton(f"💳 APays (+{APAYS_COMMISSION_PERCENT}%)", callback_data="payment_method_apays")
+                )
+            keyboard.add(
+                InlineKeyboardButton(f"⚡ Прямой перевод TON (Без комиссии)", callback_data="payment_method_ton")
+            )
+            keyboard.add(
+                InlineKeyboardButton(f"{EMOJIS['back']} Назад", callback_data="back_main")
+            )
         
         safe_edit_message(
             chat_id=call.message.chat.id,
@@ -1698,30 +1783,62 @@ def handle_callback(call: CallbackQuery):
         )
         
     elif call.data == "topup_ton":
-        # Переходим к пополнению через TON
+        # Переходим к пополнению через TON с нужной суммой
         user_data = users_data.get(user_id, {})
         user_data = update_user_structure(user_data, user_id)
         
-        topup_text = (
-            "💳 Пополнение баланса\n\n"
-            f"💰 Текущий баланс: {user_data.get('balance', 0):.2f} ₽\n"
-            f"💸 Минимальная сумма: {PAYMENT_MIN_AMOUNT} ₽\n"
-            f"💸 Максимальная сумма: {PAYMENT_MAX_AMOUNT} ₽\n\n"
-            "🔽 Выберите способ оплаты:"
-        )
+        # Получаем нужную сумму из состояния пользователя (если есть)
+        user_state = user_states.get(user_id, {})
+        needed_amount = user_state.get("needed_amount", 0)
         
-        # Создаем клавиатуру с выбором способа оплаты
-        keyboard = InlineKeyboardMarkup()
-        if APAYS_ENABLED and apays:
-            keyboard.add(
-                InlineKeyboardButton(f"💳 APays (+{APAYS_COMMISSION_PERCENT}%)", callback_data="payment_method_apays")
+        if needed_amount > 0:
+            topup_text = (
+                f"⚪️ Выбран метод: TON\n\n"
+                f"💰 Текущий баланс: {user_data.get('balance', 0):.2f} ₽\n"
+                f"💸 Нужно пополнить: {needed_amount:.2f} ₽\n"
+                f"⚡ К доплате (без комиссии): {needed_amount:.2f} ₽\n\n"
+                f"🔽 Выберите действие:"
             )
-        keyboard.add(
-            InlineKeyboardButton(f"⚡ Прямой перевод TON (Без комиссии)", callback_data="payment_method_ton")
-        )
-        keyboard.add(
-            InlineKeyboardButton(f"{EMOJIS['back']} Назад", callback_data="back_main")
-        )
+            
+            # Сохраняем данные для пополнения
+            user_states[user_id] = {
+                "state": "waiting_topup_amount",
+                "payment_method": "ton",
+                "needed_amount": needed_amount
+            }
+            
+            # Создаем клавиатуру с возможностью изменить сумму
+            keyboard = InlineKeyboardMarkup()
+            keyboard.add(
+                InlineKeyboardButton(f"⚡ Пополнить {needed_amount:.2f} ₽", callback_data="confirm_topup_ton")
+            )
+            keyboard.add(
+                InlineKeyboardButton("💰 Другая сумма", callback_data="change_amount")
+            )
+            keyboard.add(
+                InlineKeyboardButton(f"{EMOJIS['back']} Назад", callback_data="back_main")
+            )
+        else:
+            # Если нет нужной суммы, показываем обычное меню
+            topup_text = (
+                "💳 Пополнение баланса\n\n"
+                f"💰 Текущий баланс: {user_data.get('balance', 0):.2f} ₽\n"
+                f"💸 Минимальная сумма: {PAYMENT_MIN_AMOUNT} ₽\n"
+                f"💸 Максимальная сумма: {PAYMENT_MAX_AMOUNT} ₽\n\n"
+                "🔽 Выберите способ оплаты:"
+            )
+            
+            keyboard = InlineKeyboardMarkup()
+            if APAYS_ENABLED and apays:
+                keyboard.add(
+                    InlineKeyboardButton(f"💳 APays (+{APAYS_COMMISSION_PERCENT}%)", callback_data="payment_method_apays")
+                )
+            keyboard.add(
+                InlineKeyboardButton(f"⚡ Прямой перевод TON (Без комиссии)", callback_data="payment_method_ton")
+            )
+            keyboard.add(
+                InlineKeyboardButton(f"{EMOJIS['back']} Назад", callback_data="back_main")
+            )
         
         safe_edit_message(
             chat_id=call.message.chat.id,
@@ -1729,6 +1846,85 @@ def handle_callback(call: CallbackQuery):
             text=topup_text,
             reply_markup=keyboard
         )
+        
+    elif call.data == "change_amount":
+        # Переходим к вводу другой суммы
+        user_data = users_data.get(user_id, {})
+        user_data = update_user_structure(user_data, user_id)
+        
+        change_text = (
+            "💰 Введите сумму пополнения\n\n"
+            f"💰 Текущий баланс: {user_data.get('balance', 0):.2f} ₽\n"
+            f"💸 Минимальная сумма: {PAYMENT_MIN_AMOUNT} ₽\n"
+            f"💸 Максимальная сумма: {PAYMENT_MAX_AMOUNT} ₽\n\n"
+            f"Введите сумму в рублях:"
+        )
+        
+        # Устанавливаем состояние ожидания ввода суммы
+        user_states[user_id] = {
+            "state": "waiting_custom_topup_amount"
+        }
+        
+        safe_edit_message(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text=change_text,
+            reply_markup=create_cancel_keyboard()
+        )
+        
+    elif call.data == "confirm_topup_apays":
+        # Подтверждаем пополнение через APays
+        user_state = user_states.get(user_id, {})
+        amount = user_state.get("amount_with_commission", 0)
+        
+        if amount > 0:
+            # Переходим к стандартному процессу пополнения APays
+            user_states[user_id] = {
+                "state": "waiting_topup_amount",
+                "payment_method": "apays"
+            }
+            
+            # Вызываем существующий обработчик payment_method_apays
+            # Создаем фиктивный callback для вызова существующей логики
+            fake_call = type('obj', (object,), {
+                'data': 'payment_method_apays',
+                'message': call.message
+            })
+            handle_callback(fake_call)
+        else:
+            safe_edit_message(
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                text="❌ Ошибка: сумма не определена",
+                reply_markup=create_back_keyboard()
+            )
+            
+    elif call.data == "confirm_topup_ton":
+        # Подтверждаем пополнение через TON
+        user_state = user_states.get(user_id, {})
+        amount = user_state.get("needed_amount", 0)
+        
+        if amount > 0:
+            # Переходим к стандартному процессу пополнения TON
+            user_states[user_id] = {
+                "state": "waiting_topup_amount",
+                "payment_method": "ton"
+            }
+            
+            # Вызываем существующий обработчик payment_method_ton
+            # Создаем фиктивный callback для вызова существующей логики
+            fake_call = type('obj', (object,), {
+                'data': 'payment_method_ton',
+                'message': call.message
+            })
+            handle_callback(fake_call)
+        else:
+            safe_edit_message(
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                text="❌ Ошибка: сумма не определена",
+                reply_markup=create_back_keyboard()
+            )
 
     # Callback уже отвечен в начале функции
 
@@ -1870,11 +2066,21 @@ def handle_text(message: Message):
                 cost = stars_amount * effective_price
                 
                 if user_data.get('balance', 0) < cost:
+                    needed_amount = cost - user_data.get('balance', 0)
+                    
+                    # Сохраняем нужную сумму в состоянии пользователя
+                    user_states[user_id] = {
+                        "state": "insufficient_balance",
+                        "needed_amount": needed_amount,
+                        "stars_amount": stars_amount,
+                        "cost": cost
+                    }
+                    
                     insufficient_text = (
                         f"❌ Недостаточно средств для покупки\n\n"
                         f"💰 Текущий баланс: {user_data.get('balance', 0):.2f} ₽\n"
                         f"💸 Требуется: {cost:.2f} ₽\n"
-                        f"💸 Не хватает: {cost - user_data.get('balance', 0):.2f} ₽\n\n"
+                        f"💸 Не хватает: {needed_amount:.2f} ₽\n\n"
                         f"💳 Пополните баланс для продолжения покупки"
                     )
                     bot.reply_to(
@@ -1963,6 +2169,59 @@ def handle_text(message: Message):
             confirm_text,
             reply_markup=keyboard
         )
+
+    elif user_state.get("state") == "waiting_custom_topup_amount":
+        # Обработка ввода пользовательской суммы пополнения
+        try:
+            amount = float(message.text)
+            if PAYMENT_MIN_AMOUNT <= amount <= PAYMENT_MAX_AMOUNT:
+                # Показываем меню выбора способа оплаты с введенной суммой
+                user_data = users_data.get(user_id, {})
+                user_data = update_user_structure(user_data, user_id)
+                
+                topup_text = (
+                    "💳 Пополнение баланса\n\n"
+                    f"💰 Текущий баланс: {user_data.get('balance', 0):.2f} ₽\n"
+                    f"💸 Сумма пополнения: {amount:.2f} ₽\n\n"
+                    "🔽 Выберите способ оплаты:"
+                )
+                
+                # Создаем клавиатуру с выбором способа оплаты
+                keyboard = InlineKeyboardMarkup()
+                if APAYS_ENABLED and apays:
+                    keyboard.add(
+                        InlineKeyboardButton(f"💳 APays (+{APAYS_COMMISSION_PERCENT}%)", callback_data="payment_method_apays")
+                    )
+                keyboard.add(
+                    InlineKeyboardButton(f"⚡ Прямой перевод TON (Без комиссии)", callback_data="payment_method_ton")
+                )
+                keyboard.add(
+                    InlineKeyboardButton(f"{EMOJIS['back']} Назад", callback_data="back_main")
+                )
+                
+                # Сохраняем сумму в состоянии
+                user_states[user_id] = {
+                    "state": "waiting_payment_method",
+                    "custom_amount": amount
+                }
+                
+                bot.reply_to(
+                    message,
+                    topup_text,
+                    reply_markup=keyboard
+                )
+            else:
+                bot.reply_to(
+                    message,
+                    f"❌ Сумма должна быть от {PAYMENT_MIN_AMOUNT} до {PAYMENT_MAX_AMOUNT} ₽!",
+                    reply_markup=create_cancel_keyboard()
+                )
+        except ValueError:
+            bot.reply_to(
+                message,
+                "❌ Введите корректную сумму!",
+                reply_markup=create_cancel_keyboard()
+            )
 
     else:
         try:
