@@ -711,6 +711,8 @@ def handle_callback(call: CallbackQuery):
                 'chat': call.message.chat,
                 'from_user': call.message.from_user
             })
+            
+            # Вызываем обработчик текстовых сообщений
             handle_text(fake_message)
         else:
             # Обычный процесс ввода суммы
@@ -749,6 +751,8 @@ def handle_callback(call: CallbackQuery):
                 'chat': call.message.chat,
                 'from_user': call.message.from_user
             })
+            
+            # Вызываем обработчик текстовых сообщений
             handle_text(fake_message)
         else:
             # Обычный процесс ввода суммы
@@ -1720,6 +1724,9 @@ def handle_callback(call: CallbackQuery):
         user_state = user_states.get(user_id, {})
         needed_amount = user_state.get("needed_amount", 0)
         
+        # Отладочная информация
+        logging.info(f"topup_apays: user_state = {user_state}, needed_amount = {needed_amount}")
+        
         if needed_amount > 0:
             # Рассчитываем сумму с комиссией APays
             commission_rate = APAYS_COMMISSION_PERCENT / 100
@@ -1877,20 +1884,25 @@ def handle_callback(call: CallbackQuery):
         user_state = user_states.get(user_id, {})
         amount = user_state.get("amount_with_commission", 0)
         
+        # Отладочная информация
+        logging.info(f"confirm_topup_apays: user_state = {user_state}, amount = {amount}")
+        
         if amount > 0:
-            # Переходим к стандартному процессу пополнения APays
+            # Создаем фиктивное сообщение для вызова обработки
+            fake_message = type('obj', (object,), {
+                'text': str(amount),
+                'chat': call.message.chat,
+                'from_user': call.message.from_user
+            })
+            
+            # Устанавливаем состояние для обработки
             user_states[user_id] = {
                 "state": "waiting_topup_amount",
                 "payment_method": "apays"
             }
             
-            # Вызываем существующий обработчик payment_method_apays
-            # Создаем фиктивный callback для вызова существующей логики
-            fake_call = type('obj', (object,), {
-                'data': 'payment_method_apays',
-                'message': call.message
-            })
-            handle_callback(fake_call)
+            # Вызываем обработчик текстовых сообщений
+            handle_text(fake_message)
         else:
             safe_edit_message(
                 chat_id=call.message.chat.id,
@@ -1905,19 +1917,21 @@ def handle_callback(call: CallbackQuery):
         amount = user_state.get("needed_amount", 0)
         
         if amount > 0:
-            # Переходим к стандартному процессу пополнения TON
+            # Создаем фиктивное сообщение для вызова обработки
+            fake_message = type('obj', (object,), {
+                'text': str(amount),
+                'chat': call.message.chat,
+                'from_user': call.message.from_user
+            })
+            
+            # Устанавливаем состояние для обработки
             user_states[user_id] = {
                 "state": "waiting_topup_amount",
                 "payment_method": "ton"
             }
             
-            # Вызываем существующий обработчик payment_method_ton
-            # Создаем фиктивный callback для вызова существующей логики
-            fake_call = type('obj', (object,), {
-                'data': 'payment_method_ton',
-                'message': call.message
-            })
-            handle_callback(fake_call)
+            # Вызываем обработчик текстовых сообщений
+            handle_text(fake_message)
         else:
             safe_edit_message(
                 chat_id=call.message.chat.id,
@@ -2170,6 +2184,18 @@ def handle_text(message: Message):
             reply_markup=keyboard
         )
 
+    elif user_state.get("state") == "insufficient_balance":
+        # Обработка состояния недостаточного баланса
+        # Это состояние не должно обрабатываться в handle_text
+        # Оно обрабатывается через callback'и
+        pass
+        
+    elif user_state.get("state") == "waiting_payment_method":
+        # Обработка выбора способа оплаты с пользовательской суммой
+        # Это состояние не должно обрабатываться в handle_text
+        # Оно обрабатывается через callback'и
+        pass
+        
     elif user_state.get("state") == "waiting_custom_topup_amount":
         # Обработка ввода пользовательской суммы пополнения
         try:
