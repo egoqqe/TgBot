@@ -874,7 +874,6 @@ def handle_callback(call: CallbackQuery):
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
                     text=payment_text,
-                    parse_mode='HTML',
                     reply_markup=create_cancel_keyboard()
                 )
             else:
@@ -1951,11 +1950,16 @@ def handle_callback(call: CallbackQuery):
         # Получаем состояние пользователя
         user_state = user_states.get(user_id, {})
         
+        # Отладочная информация
+        logging.info(f"topup_ton: user_state = {user_state}")
+        
         # Получаем нужную сумму в зависимости от состояния
         if user_state.get("state") == "insufficient_balance":
             needed_amount = user_state.get("needed_amount", 0)
         else:
             needed_amount = user_state.get("needed_amount", 0)
+        
+        logging.info(f"topup_ton: needed_amount = {needed_amount}")
         
         if needed_amount > 0:
             topup_text = (
@@ -2109,11 +2113,18 @@ def handle_callback(call: CallbackQuery):
         # Подтверждаем пополнение через TON
         user_state = user_states.get(user_id, {})
         
+        # Отладочная информация
+        logging.info(f"confirm_topup_ton: user_state = {user_state}")
+        
         # Получаем сумму в зависимости от состояния
         if user_state.get("state") == "insufficient_balance":
             amount = user_state.get("needed_amount", 0)
+        elif user_state.get("state") == "waiting_topup_amount":
+            amount = user_state.get("needed_amount", 0)
         else:
             amount = user_state.get("needed_amount", 0)
+        
+        logging.info(f"confirm_topup_ton: amount = {amount}")
         
         if amount > 0:
             # Напрямую вызываем логику пополнения TON
@@ -2152,7 +2163,6 @@ def handle_callback(call: CallbackQuery):
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
                     text=payment_text,
-                    parse_mode='HTML',
                     reply_markup=create_cancel_keyboard()
                 )
             else:
