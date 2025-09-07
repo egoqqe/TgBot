@@ -198,6 +198,18 @@ class TonPayment:
         ton_link = f"ton://transfer/{self.wallet_address}?amount={int(amount_ton * 1000000000)}"
         return ton_link
     
+    def get_wallet_info(self) -> Dict:
+        """Получает информацию о кошельке"""
+        try:
+            return {
+                "address": self.wallet_address,
+                "commission_percent": self.commission_percent,
+                "api_configured": bool(self.api_key and self.api_url)
+            }
+        except Exception as e:
+            logging.error(f"Ошибка получения информации о кошельке: {e}")
+            return None
+    
     def format_payment_info(self, payment_data: Dict) -> str:
         """Форматирует информацию о платеже"""
         return f"""

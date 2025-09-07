@@ -848,25 +848,24 @@ def handle_callback(call: CallbackQuery):
                 )
                 return
             
-            # Генерируем уникальный комментарий для платежа
-            comment = f"topup_{user_id}_{int(time.time())}"
-            
-            # Получаем информацию о кошельке
-            wallet_info = ton_payment.get_wallet_info()
-            if wallet_info:
+            # Создаем платеж через TON
+            payment_data = ton_payment.create_payment_request(user_id, amount)
+            if payment_data and "error" not in payment_data:
                 # Сохраняем данные платежа
                 user_states[user_id] = {
                     "state": "waiting_payment_confirmation",
                     "payment_method": "ton",
                     "amount": amount,
-                    "comment": comment
+                    "payment_id": payment_data["payment_id"],
+                    "comment": payment_data["comment"],
+                    "amount_ton": payment_data["amount_ton"]
                 }
                 
                 payment_text = (
                     f"⚡ TON платеж\n\n"
-                    f"💰 Сумма: {amount:.2f} ₽\n"
-                    f"💬 Комментарий: <code>{comment}</code>\n\n"
-                    f"🏦 Адрес кошелька:\n<code>{wallet_info['address']}</code>\n\n"
+                    f"💰 Сумма: {amount:.2f} ₽ ({payment_data['amount_ton']:.4f} TON)\n"
+                    f"💬 Комментарий: <code>{payment_data['comment']}</code>\n\n"
+                    f"🏦 Адрес кошелька:\n<code>{payment_data['wallet_address']}</code>\n\n"
                     f"⚠️ ВАЖНО: Обязательно укажите комментарий при переводе!\n"
                     f"⏳ Ожидаем подтверждения платежа..."
                 )
@@ -879,10 +878,11 @@ def handle_callback(call: CallbackQuery):
                     reply_markup=create_cancel_keyboard()
                 )
             else:
+                error_msg = payment_data.get("error", "Неизвестная ошибка") if payment_data else "Ошибка создания платежа"
                 safe_edit_message(
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
-                    text="❌ Ошибка получения информации о кошельке",
+                    text=f"❌ Ошибка создания TON платежа: {error_msg}",
                     reply_markup=create_back_keyboard()
                 )
         else:
@@ -2126,25 +2126,24 @@ def handle_callback(call: CallbackQuery):
                 )
                 return
             
-            # Генерируем уникальный комментарий для платежа
-            comment = f"topup_{user_id}_{int(time.time())}"
-            
-            # Получаем информацию о кошельке
-            wallet_info = ton_payment.get_wallet_info()
-            if wallet_info:
+            # Создаем платеж через TON
+            payment_data = ton_payment.create_payment_request(user_id, amount)
+            if payment_data and "error" not in payment_data:
                 # Сохраняем данные платежа
                 user_states[user_id] = {
                     "state": "waiting_payment_confirmation",
                     "payment_method": "ton",
                     "amount": amount,
-                    "comment": comment
+                    "payment_id": payment_data["payment_id"],
+                    "comment": payment_data["comment"],
+                    "amount_ton": payment_data["amount_ton"]
                 }
                 
                 payment_text = (
                     f"⚡ TON платеж\n\n"
-                    f"💰 Сумма: {amount:.2f} ₽\n"
-                    f"💬 Комментарий: <code>{comment}</code>\n\n"
-                    f"🏦 Адрес кошелька:\n<code>{wallet_info['address']}</code>\n\n"
+                    f"💰 Сумма: {amount:.2f} ₽ ({payment_data['amount_ton']:.4f} TON)\n"
+                    f"💬 Комментарий: <code>{payment_data['comment']}</code>\n\n"
+                    f"🏦 Адрес кошелька:\n<code>{payment_data['wallet_address']}</code>\n\n"
                     f"⚠️ ВАЖНО: Обязательно укажите комментарий при переводе!\n"
                     f"⏳ Ожидаем подтверждения платежа..."
                 )
@@ -2157,10 +2156,11 @@ def handle_callback(call: CallbackQuery):
                     reply_markup=create_cancel_keyboard()
                 )
             else:
+                error_msg = payment_data.get("error", "Неизвестная ошибка") if payment_data else "Ошибка создания платежа"
                 safe_edit_message(
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
-                    text="❌ Ошибка получения информации о кошельке",
+                    text=f"❌ Ошибка создания TON платежа: {error_msg}",
                     reply_markup=create_back_keyboard()
                 )
         else:
