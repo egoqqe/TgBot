@@ -61,35 +61,75 @@ def safe_edit_message(chat_id, message_id, text, reply_markup=None, photo_path=N
             )
     except Exception as e:
         logging.error(f"Ошибка редактирования сообщения: {e}")
-        # Fallback - отправляем новое сообщение
-        try:
-            if photo_path and os.path.exists(photo_path):
-                with open(photo_path, 'rb') as photo:
-                    bot.send_photo(
+        # Проверяем тип ошибки для более точной обработки
+        error_str = str(e).lower()
+        
+        # Если это ошибка "message is not modified", игнорируем её
+        if "message is not modified" in error_str or "message_not_modified" in error_str:
+            logging.info("Сообщение не изменилось, игнорируем ошибку")
+            return
+        
+        # Если это ошибка "message to edit not found", отправляем новое сообщение
+        if "message to edit not found" in error_str or "message_not_found" in error_str:
+            logging.info("Сообщение для редактирования не найдено, отправляем новое")
+            try:
+                if photo_path and os.path.exists(photo_path):
+                    with open(photo_path, 'rb') as photo:
+                        bot.send_photo(
+                            chat_id=chat_id,
+                            photo=photo,
+                            caption=text,
+                            reply_markup=reply_markup,
+                            parse_mode='HTML'
+                        )
+                else:
+                    bot.send_message(
                         chat_id=chat_id,
-                        photo=photo,
-                        caption=text,
+                        text=text,
                         reply_markup=reply_markup,
                         parse_mode='HTML'
                     )
-            else:
-                bot.send_message(
-                    chat_id=chat_id,
-                    text=text,
-                    reply_markup=reply_markup,
-                    parse_mode='HTML'
-                )
-        except Exception as fallback_error:
-            logging.error(f"Ошибка fallback отправки сообщения: {fallback_error}")
-            # Последняя попытка - простое сообщение без форматирования
+            except Exception as fallback_error:
+                logging.error(f"Ошибка fallback отправки сообщения: {fallback_error}")
+                # Последняя попытка - простое сообщение без форматирования
+                try:
+                    bot.send_message(
+                        chat_id=chat_id,
+                        text="Произошла ошибка. Попробуйте еще раз.",
+                        reply_markup=create_main_menu()
+                    )
+                except Exception as final_error:
+                    logging.error(f"Критическая ошибка отправки сообщения: {final_error}")
+        else:
+            # Для других ошибок пытаемся отправить новое сообщение
             try:
-                bot.send_message(
-                    chat_id=chat_id,
-                    text="Произошла ошибка. Попробуйте еще раз.",
-                    reply_markup=create_main_menu()
-                )
-            except Exception as final_error:
-                logging.error(f"Критическая ошибка отправки сообщения: {final_error}")
+                if photo_path and os.path.exists(photo_path):
+                    with open(photo_path, 'rb') as photo:
+                        bot.send_photo(
+                            chat_id=chat_id,
+                            photo=photo,
+                            caption=text,
+                            reply_markup=reply_markup,
+                            parse_mode='HTML'
+                        )
+                else:
+                    bot.send_message(
+                        chat_id=chat_id,
+                        text=text,
+                        reply_markup=reply_markup,
+                        parse_mode='HTML'
+                    )
+            except Exception as fallback_error:
+                logging.error(f"Ошибка fallback отправки сообщения: {fallback_error}")
+                # Последняя попытка - простое сообщение без форматирования
+                try:
+                    bot.send_message(
+                        chat_id=chat_id,
+                        text="Произошла ошибка. Попробуйте еще раз.",
+                        reply_markup=create_main_menu()
+                    )
+                except Exception as final_error:
+                    logging.error(f"Критическая ошибка отправки сообщения: {final_error}")
 
 # Функция для отправки изображения с текстом
 def send_photo_with_text(chat_id, text, photo_path, reply_markup=None, message_id=None):
@@ -111,6 +151,13 @@ def send_photo_with_text(chat_id, text, photo_path, reply_markup=None, message_i
                         )
                     except Exception as media_error:
                         # Если не удалось редактировать медиа, пытаемся отредактировать только подпись
+                        error_str = str(media_error).lower()
+                        
+                        # Если сообщение не изменилось, игнорируем ошибку
+                        if "message is not modified" in error_str or "message_not_modified" in error_str:
+                            logging.info("Медиа сообщение не изменилось, игнорируем ошибку")
+                            return
+                        
                         try:
                             bot.edit_message_caption(
                                 chat_id=chat_id,
@@ -120,6 +167,13 @@ def send_photo_with_text(chat_id, text, photo_path, reply_markup=None, message_i
                                 parse_mode='HTML'
                             )
                         except Exception as caption_error:
+                            caption_error_str = str(caption_error).lower()
+                            
+                            # Если подпись не изменилась, игнорируем ошибку
+                            if "message is not modified" in caption_error_str or "message_not_modified" in caption_error_str:
+                                logging.info("Подпись сообщения не изменилась, игнорируем ошибку")
+                                return
+                            
                             # Если и это не удалось, отправляем новое сообщение
                             logging.warning(f"Не удалось редактировать сообщение, отправляем новое: {media_error}, {caption_error}")
                             bot.send_photo(
@@ -151,6 +205,13 @@ def send_photo_with_text(chat_id, text, photo_path, reply_markup=None, message_i
                         parse_mode='HTML'
                     )
                 except Exception as text_error:
+                    text_error_str = str(text_error).lower()
+                    
+                    # Если сообщение не изменилось, игнорируем ошибку
+                    if "message is not modified" in text_error_str or "message_not_modified" in text_error_str:
+                        logging.info("Текстовое сообщение не изменилось, игнорируем ошибку")
+                        return
+                    
                     # Если не удалось отредактировать текст, отправляем новое сообщение
                     logging.warning(f"Не удалось отредактировать текст, отправляем новое: {text_error}")
                     bot.send_message(
@@ -2364,9 +2425,51 @@ def handle_text(message: Message):
 
     elif user_state.get("state") == "insufficient_balance":
         # Обработка состояния недостаточного баланса
-        # Это состояние не должно обрабатываться в handle_text
-        # Оно обрабатывается через callback'и
-        pass
+        # Пользователь может ввести новую сумму для пополнения
+        try:
+            amount = float(message.text)
+            if PAYMENT_MIN_AMOUNT <= amount <= PAYMENT_MAX_AMOUNT:
+                # Обновляем нужную сумму
+                user_states[user_id]["needed_amount"] = amount
+                
+                # Показываем меню выбора способа оплаты
+                topup_text = (
+                    f"💰 Недостаточно средств\n\n"
+                    f"💸 Нужно пополнить: {amount:.2f} ₽\n\n"
+                    f"Выберите способ пополнения:"
+                )
+                
+                keyboard = InlineKeyboardMarkup()
+                if APAYS_ENABLED:
+                    commission_rate = APAYS_COMMISSION_PERCENT / 100
+                    amount_with_commission = amount / (1 - commission_rate)
+                    keyboard.add(
+                        InlineKeyboardButton(f"💳 APays (+{APAYS_COMMISSION_PERCENT}%) - {amount_with_commission:.2f} ₽", callback_data="topup_apays")
+                    )
+                if TON_ENABLED:
+                    keyboard.add(
+                        InlineKeyboardButton(f"⚡ TON (без комиссии) - {amount:.2f} ₽", callback_data="topup_ton")
+                    )
+                keyboard.add(
+                    InlineKeyboardButton("❌ Отменить", callback_data="back_main")
+                )
+                
+                safe_edit_message(
+                    chat_id=message.chat.id,
+                    message_id=message.message_id,
+                    text=topup_text,
+                    reply_markup=keyboard
+                )
+            else:
+                bot.reply_to(
+                    message,
+                    f"❌ Сумма должна быть от {PAYMENT_MIN_AMOUNT} до {PAYMENT_MAX_AMOUNT} ₽"
+                )
+        except ValueError:
+            bot.reply_to(
+                message,
+                "❌ Введите корректную сумму в рублях"
+            )
         
     elif user_state.get("state") == "waiting_payment_method":
         # Обработка выбора способа оплаты с пользовательской суммой
@@ -2478,16 +2581,26 @@ if __name__ == "__main__":
             logging.error(f"❌ Ошибка polling: {e}")
             print(f"❌ Ошибка соединения: {e}")
             
+            error_str = str(e).lower()
+            
             # Если это ошибка 409 (конфликт), ждем дольше
-            if "409" in str(e) or "Conflict" in str(e):
+            if "409" in error_str or "conflict" in error_str:
                 print("⚠️ Обнаружен конфликт - другой экземпляр бота запущен")
                 print("🔄 Ожидание 30 секунд перед перезапуском...")
                 import time
                 time.sleep(30)
-            elif "APaysPayment" in str(e):
+            elif "apayspayment" in error_str or "apays" in error_str:
                 print("⚠️ Ошибка APays - перезапуск через 10 секунд...")
                 import time
                 time.sleep(10)
+            elif "network" in error_str or "connection" in error_str or "timeout" in error_str:
+                print("⚠️ Проблемы с сетью - перезапуск через 15 секунд...")
+                import time
+                time.sleep(15)
+            elif "rate limit" in error_str or "too many requests" in error_str:
+                print("⚠️ Превышен лимит запросов - ожидание 60 секунд...")
+                import time
+                time.sleep(60)
             else:
                 print("🔄 Перезапуск через 5 секунд...")
                 import time

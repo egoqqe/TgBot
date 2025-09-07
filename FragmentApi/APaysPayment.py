@@ -223,6 +223,47 @@ class APaysPayment:
             Сумма в рублях
         """
         return kopecks / 100
+    
+    def create_payment(self, amount_rubles: float, callback_url: str = "") -> Dict[str, Any]:
+        """
+        Создает платеж (обертка над create_order для совместимости)
+        
+        Args:
+            amount_rubles: Сумма в рублях
+            callback_url: URL для webhook уведомлений (опционально)
+            
+        Returns:
+            Данные платежа с URL для оплаты
+        """
+        try:
+            # Генерируем уникальный ID заказа
+            order_id = f"payment_{int(time.time())}_{hash(str(amount_rubles)) % 10000}"
+            
+            # Конвертируем рубли в копейки
+            amount_kopecks = self.rubles_to_kopecks(amount_rubles)
+            
+            # Создаем заказ
+            order_data = self.create_order(
+                order_id=order_id,
+                amount=amount_kopecks,
+                callback_url=callback_url
+            )
+            
+            # Преобразуем ответ в формат, ожидаемый ботом
+            if order_data and "url" in order_data:
+                return {
+                    "payment_id": order_id,
+                    "payment_url": order_data["url"],
+                    "amount": amount_rubles,
+                    "status": "created"
+                }
+            else:
+                logging.error(f"❌ Неожиданный формат ответа APays: {order_data}")
+                return None
+                
+        except Exception as e:
+            logging.error(f"❌ Ошибка создания платежа APays: {e}")
+            return None
 
 
 # Пример использования
