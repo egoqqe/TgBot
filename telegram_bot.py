@@ -1789,6 +1789,10 @@ def handle_callback(call: CallbackQuery):
         user_state = user_states.get(user_id, {})
         needed_amount = user_state.get("needed_amount", 0)
         
+        # Если пользователь в состоянии insufficient_balance, получаем сумму оттуда
+        if user_state.get("state") == "insufficient_balance":
+            needed_amount = user_state.get("needed_amount", 0)
+        
         # Отладочная информация
         logging.info(f"topup_apays: user_state = {user_state}, needed_amount = {needed_amount}")
         
@@ -1863,12 +1867,16 @@ def handle_callback(call: CallbackQuery):
         user_state = user_states.get(user_id, {})
         needed_amount = user_state.get("needed_amount", 0)
         
+        # Если пользователь в состоянии insufficient_balance, получаем сумму оттуда
+        if user_state.get("state") == "insufficient_balance":
+            needed_amount = user_state.get("needed_amount", 0)
+        
         if needed_amount > 0:
             topup_text = (
                 f"⚪️ Выбран метод: TON\n\n"
                 f"💰 Текущий баланс: {user_data.get('balance', 0):.2f} ₽\n"
                 f"💸 Нужно пополнить: {needed_amount:.2f} ₽\n"
-                f"⚡ К доплате (без комиссии): {needed_amount:.2f} ₽\n\n"
+                f"⚡ К оплате (без комиссии): {needed_amount:.2f} ₽\n\n"
                 f"🔽 Выберите действие:"
             )
             
