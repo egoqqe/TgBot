@@ -858,23 +858,38 @@ def handle_callback(call: CallbackQuery):
                     "amount": amount,
                     "payment_id": payment_data["payment_id"],
                     "comment": payment_data["comment"],
-                    "amount_ton": payment_data["amount_ton"]
+                    "amount_ton": payment_data["amount_ton"],
+                    "created_at": int(time.time())
                 }
                 
                 payment_text = (
-                    f"⚡ TON платеж\n\n"
-                    f"💰 Сумма: {amount:.2f} ₽ ({payment_data['amount_ton']:.4f} TON)\n"
-                    f"💬 Комментарий: <code>{payment_data['comment']}</code>\n\n"
-                    f"🏦 Адрес кошелька:\n<code>{payment_data['wallet_address']}</code>\n\n"
-                    f"⚠️ ВАЖНО: Обязательно укажите комментарий при переводе!\n"
-                    f"⏳ Ожидаем подтверждения платежа..."
+                    f"📋 Платеж сформирован\n\n"
+                    f"💸 Сумма к отправке: {payment_data['amount_ton']:.4f} TON\n"
+                    f"⚠️ Комментарий: <code>{payment_data['comment']}</code>\n"
+                    f"💳 Адрес для оплаты: <code>{payment_data['wallet_address']}</code>\n\n"
+                    f"‼️ Обязательно указывайте комментарий при отправке монет, в противном случае - пополнение не будет засчитано\n"
+                    f"‼️ Окончательная сумма к получению будет рассчитана в момент получения монет\n\n"
+                    f"📱 Для оплаты:\n"
+                    f"1. Откройте TON кошелек\n"
+                    f"2. Отправьте {payment_data['amount_ton']:.4f} TON на указанный адрес\n"
+                    f"3. В комментарии укажите: <code>{payment_data['comment']}</code>\n"
+                    f"4. Нажмите \"Проверить оплату\" после перевода"
+                )
+                
+                # Создаем клавиатуру с кнопкой проверки оплаты
+                keyboard = InlineKeyboardMarkup()
+                keyboard.add(
+                    InlineKeyboardButton("🔍 Проверить оплату", callback_data=f"check_ton_payment_{payment_data['payment_id']}")
+                )
+                keyboard.add(
+                    InlineKeyboardButton("❌ Отменить", callback_data="cancel")
                 )
                 
                 safe_edit_message(
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
                     text=payment_text,
-                    reply_markup=create_cancel_keyboard()
+                    reply_markup=keyboard
                 )
             else:
                 error_msg = payment_data.get("error", "Неизвестная ошибка") if payment_data else "Ошибка создания платежа"
@@ -977,6 +992,109 @@ def handle_callback(call: CallbackQuery):
             reply_markup=create_profile_keyboard()
         )
         
+    elif call.data.startswith("check_ton_payment_"):
+        # Проверяем TON платеж
+        payment_id = call.data.replace("check_ton_payment_", "")
+        user_state = user_states.get(user_id, {})
+        
+        if user_state.get("payment_method") == "ton" and user_state.get("payment_id") == payment_id:
+            # Проверяем платеж через TON API
+            if ton_payment:
+                try:
+                    result = ton_payment.check_ton_transaction(payment_id, user_state.get("comment"))
+                    
+                    if result.get("status") == "approved":
+                        # Платеж подтвержден
+                        amount_ton = result.get("amount", 0)
+                        amount_rub = ton_payment.ton_to_rubles(amount_ton)
+                        
+                        # Пополняем баланс пользователя
+                        user_data = users_data.get(user_id, {})
+                        user_data = update_user_structure(user_data, user_id)
+                        user_data['balance'] = user_data.get('balance', 0) + amount_rub
+                        users_data[user_id] = user_data
+                        save_users_data()
+                        
+                        # Очищаем состояние пользователя
+                        user_states.pop(user_id, None)
+                        
+                        success_text = (
+                            f"✅ Платеж подтвержден!\n\n"
+                            f"💰 Получено: {amount_ton:.4f} TON ({amount_rub:.2f} ₽)\n"
+                            f"💳 Новый баланс: {user_data['balance']:.2f} ₽\n\n"
+                            f"🎉 Баланс успешно пополнен!"
+                        )
+                        
+                        safe_edit_message(
+                            chat_id=call.message.chat.id,
+                            message_id=call.message.message_id,
+                            text=success_text,
+                            reply_markup=create_main_menu()
+                        )
+                        
+                    elif result.get("status") == "pending":
+                        # Платеж еще не поступил
+                        pending_text = (
+                            f"⏳ Платеж еще не поступил\n\n"
+                            f"💸 Ожидаем: {user_state.get('amount_ton', 0):.4f} TON\n"
+                            f"💬 С комментарием: <code>{user_state.get('comment', '')}</code>\n\n"
+                            f"🔄 Попробуйте еще раз через несколько минут"
+                        )
+                        
+                        # Создаем клавиатуру с кнопкой повторной проверки
+                        keyboard = InlineKeyboardMarkup()
+                        keyboard.add(
+                            InlineKeyboardButton("🔍 Проверить снова", callback_data=f"check_ton_payment_{payment_id}")
+                        )
+                        keyboard.add(
+                            InlineKeyboardButton("❌ Отменить", callback_data="cancel")
+                        )
+                        
+                        safe_edit_message(
+                            chat_id=call.message.chat.id,
+                            message_id=call.message.message_id,
+                            text=pending_text,
+                            reply_markup=keyboard
+                        )
+                        
+                    else:
+                        # Ошибка проверки
+                        error_text = (
+                            f"❌ Ошибка проверки платежа\n\n"
+                            f"🔍 Статус: {result.get('status', 'неизвестно')}\n"
+                            f"📝 Сообщение: {result.get('message', 'Нет дополнительной информации')}\n\n"
+                            f"💬 Обратитесь в поддержку, если проблема повторяется"
+                        )
+                        
+                        safe_edit_message(
+                            chat_id=call.message.chat.id,
+                            message_id=call.message.message_id,
+                            text=error_text,
+                            reply_markup=create_back_keyboard()
+                        )
+                        
+                except Exception as e:
+                    logging.error(f"Ошибка проверки TON платежа: {e}")
+                    safe_edit_message(
+                        chat_id=call.message.chat.id,
+                        message_id=call.message.message_id,
+                        text="❌ Ошибка проверки платежа. Попробуйте позже.",
+                        reply_markup=create_back_keyboard()
+                    )
+            else:
+                safe_edit_message(
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    text="❌ TON платежи временно недоступны",
+                    reply_markup=create_back_keyboard()
+                )
+        else:
+            safe_edit_message(
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                text="❌ Платеж не найден или истек",
+                reply_markup=create_back_keyboard()
+            )
 
         
     elif call.data == "cancel":
@@ -2147,23 +2265,38 @@ def handle_callback(call: CallbackQuery):
                     "amount": amount,
                     "payment_id": payment_data["payment_id"],
                     "comment": payment_data["comment"],
-                    "amount_ton": payment_data["amount_ton"]
+                    "amount_ton": payment_data["amount_ton"],
+                    "created_at": int(time.time())
                 }
                 
                 payment_text = (
-                    f"⚡ TON платеж\n\n"
-                    f"💰 Сумма: {amount:.2f} ₽ ({payment_data['amount_ton']:.4f} TON)\n"
-                    f"💬 Комментарий: <code>{payment_data['comment']}</code>\n\n"
-                    f"🏦 Адрес кошелька:\n<code>{payment_data['wallet_address']}</code>\n\n"
-                    f"⚠️ ВАЖНО: Обязательно укажите комментарий при переводе!\n"
-                    f"⏳ Ожидаем подтверждения платежа..."
+                    f"📋 Платеж сформирован\n\n"
+                    f"💸 Сумма к отправке: {payment_data['amount_ton']:.4f} TON\n"
+                    f"⚠️ Комментарий: <code>{payment_data['comment']}</code>\n"
+                    f"💳 Адрес для оплаты: <code>{payment_data['wallet_address']}</code>\n\n"
+                    f"‼️ Обязательно указывайте комментарий при отправке монет, в противном случае - пополнение не будет засчитано\n"
+                    f"‼️ Окончательная сумма к получению будет рассчитана в момент получения монет\n\n"
+                    f"📱 Для оплаты:\n"
+                    f"1. Откройте TON кошелек\n"
+                    f"2. Отправьте {payment_data['amount_ton']:.4f} TON на указанный адрес\n"
+                    f"3. В комментарии укажите: <code>{payment_data['comment']}</code>\n"
+                    f"4. Нажмите \"Проверить оплату\" после перевода"
+                )
+                
+                # Создаем клавиатуру с кнопкой проверки оплаты
+                keyboard = InlineKeyboardMarkup()
+                keyboard.add(
+                    InlineKeyboardButton("🔍 Проверить оплату", callback_data=f"check_ton_payment_{payment_data['payment_id']}")
+                )
+                keyboard.add(
+                    InlineKeyboardButton("❌ Отменить", callback_data="cancel")
                 )
                 
                 safe_edit_message(
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
                     text=payment_text,
-                    reply_markup=create_cancel_keyboard()
+                    reply_markup=keyboard
                 )
             else:
                 error_msg = payment_data.get("error", "Неизвестная ошибка") if payment_data else "Ошибка создания платежа"
@@ -2560,6 +2693,68 @@ def handle_text(message: Message):
             except Exception as fallback_error:
                 logging.error(f"❌ Критическая ошибка отправки fallback сообщения: {fallback_error}")
 
+# Функция автопроверки TON платежей
+def auto_check_ton_payments():
+    """Автоматически проверяет ожидающие TON платежи"""
+    try:
+        current_time = int(time.time())
+        
+        # Загружаем данные пользователей
+        users_data = load_users_data()
+        
+        # Проверяем всех пользователей с ожидающими TON платежами
+        for user_id, user_state in list(user_states.items()):
+            if (user_state.get("state") == "waiting_payment_confirmation" and 
+                user_state.get("payment_method") == "ton" and
+                user_state.get("payment_id")):
+                
+                payment_id = user_state.get("payment_id")
+                created_at = user_state.get("created_at", current_time)
+                
+                # Проверяем только платежи старше 2 минут
+                if current_time - created_at > 120:
+                    try:
+                        result = ton_payment.check_ton_transaction(payment_id, user_state.get("comment"))
+                        
+                        if result.get("status") == "approved":
+                            # Платеж подтвержден
+                            amount_ton = result.get("amount", 0)
+                            amount_rub = ton_payment.ton_to_rubles(amount_ton)
+                            
+                            # Пополняем баланс пользователя
+                            user_data = users_data.get(user_id, {})
+                            user_data = update_user_structure(user_data, user_id)
+                            user_data['balance'] = user_data.get('balance', 0) + amount_rub
+                            users_data[user_id] = user_data
+                            save_users_data()
+                            
+                            # Очищаем состояние пользователя
+                            user_states.pop(user_id, None)
+                            
+                            # Отправляем уведомление пользователю
+                            success_text = (
+                                f"✅ Платеж автоматически подтвержден!\n\n"
+                                f"💰 Получено: {amount_ton:.4f} TON ({amount_rub:.2f} ₽)\n"
+                                f"💳 Новый баланс: {user_data['balance']:.2f} ₽\n\n"
+                                f"🎉 Баланс успешно пополнен!"
+                            )
+                            
+                            try:
+                                bot.send_message(
+                                    chat_id=user_id,
+                                    text=success_text,
+                                    reply_markup=create_main_menu()
+                                )
+                                logging.info(f"✅ Автоподтверждение TON платежа для пользователя {user_id}: {amount_ton:.4f} TON")
+                            except Exception as e:
+                                logging.error(f"Ошибка отправки уведомления о подтверждении платежа: {e}")
+                                
+                    except Exception as e:
+                        logging.error(f"Ошибка автопроверки TON платежа {payment_id}: {e}")
+                        
+    except Exception as e:
+        logging.error(f"Ошибка автопроверки TON платежей: {e}")
+
 # Инициализация логирования
 log_init()
 
@@ -2585,6 +2780,9 @@ if __name__ == "__main__":
     # Запуск с обработкой ошибок соединения
     while True:
         try:
+            # Автопроверка TON платежей каждые 30 секунд
+            auto_check_ton_payments()
+            
             print("🔄 Запуск polling...")
             bot.polling(none_stop=True, interval=1, timeout=20)
         except Exception as e:
