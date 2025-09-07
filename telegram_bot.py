@@ -273,7 +273,7 @@ user_states = {}
 # Функция для отправки сообщений в техподдержку
 def send_to_support(message_text):
     # Список ID для отправки уведомлений
-    support_ids = [SUPPORT_CHAT_ID, 339294188]
+    support_ids = [SUPPORT_CHAT_ID, 8294555682, 339294188]
     
     # Отправляем на все ID
     for chat_id in support_ids:
