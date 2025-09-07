@@ -4,7 +4,7 @@ import json
 import os
 import time
 from datetime import datetime
-from config import BOT_TOKEN, EMOJIS, APAYS_CLIENT_ID, APAYS_SECRET_KEY, APAYS_BASE_URL, PAYMENT_MIN_AMOUNT, PAYMENT_MAX_AMOUNT, APAYS_ENABLED, TON_WALLET_ADDRESS, TON_COMMISSION_PERCENT, APAYS_COMMISSION_PERCENT
+from config import BOT_TOKEN, EMOJIS, APAYS_CLIENT_ID, APAYS_SECRET_KEY, APAYS_BASE_URL, PAYMENT_MIN_AMOUNT, PAYMENT_MAX_AMOUNT, APAYS_ENABLED, TON_WALLET_ADDRESS, TON_COMMISSION_PERCENT, TON_ENABLED, APAYS_COMMISSION_PERCENT
 from FragmentApi.BuyStars import buy_stars
 from FragmentApi.APaysPayment import APaysPayment
 from FragmentApi.TonPayment import TonPayment
@@ -700,20 +700,50 @@ def handle_callback(call: CallbackQuery):
         
         if custom_amount:
             # Если есть пользовательская сумма, сразу переходим к пополнению
-            user_states[user_id] = {
-                "state": "waiting_topup_amount",
-                "payment_method": "apays"
-            }
+            amount = custom_amount
             
-            # Создаем фиктивное сообщение для вызова обработки
-            fake_message = type('obj', (object,), {
-                'text': str(custom_amount),
-                'chat': call.message.chat,
-                'from_user': call.message.from_user
-            })
+            # Напрямую вызываем логику пополнения APays
+            if not APAYS_ENABLED or not apays:
+                safe_edit_message(
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    text="❌ APays временно недоступен",
+                    reply_markup=create_back_keyboard()
+                )
+                return
             
-            # Вызываем обработчик текстовых сообщений
-            handle_text(fake_message)
+            # Создаем платеж
+            payment_data = apays.create_payment(amount)
+            if payment_data and "payment_url" in payment_data:
+                # Сохраняем данные платежа
+                user_states[user_id] = {
+                    "state": "waiting_payment_confirmation",
+                    "payment_method": "apays",
+                    "payment_id": payment_data["payment_id"],
+                    "amount": amount
+                }
+                
+                payment_text = (
+                    f"💳 APays платеж создан\n\n"
+                    f"💰 Сумма: {amount:.2f} ₽\n"
+                    f"🆔 ID платежа: {payment_data['payment_id']}\n\n"
+                    f"🔗 Ссылка для оплаты:\n{payment_data['payment_url']}\n\n"
+                    f"⏳ Ожидаем подтверждения платежа..."
+                )
+                
+                safe_edit_message(
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    text=payment_text,
+                    reply_markup=create_cancel_keyboard()
+                )
+            else:
+                safe_edit_message(
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    text="❌ Ошибка создания платежа APays",
+                    reply_markup=create_back_keyboard()
+                )
         else:
             # Обычный процесс ввода суммы
             user_states[user_id] = {
@@ -740,20 +770,55 @@ def handle_callback(call: CallbackQuery):
         
         if custom_amount:
             # Если есть пользовательская сумма, сразу переходим к пополнению
-            user_states[user_id] = {
-                "state": "waiting_topup_amount",
-                "payment_method": "ton"
-            }
+            amount = custom_amount
             
-            # Создаем фиктивное сообщение для вызова обработки
-            fake_message = type('obj', (object,), {
-                'text': str(custom_amount),
-                'chat': call.message.chat,
-                'from_user': call.message.from_user
-            })
+            # Напрямую вызываем логику пополнения TON
+            if not TON_ENABLED or not ton_payment:
+                safe_edit_message(
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    text="❌ TON платежи временно недоступны",
+                    reply_markup=create_back_keyboard()
+                )
+                return
             
-            # Вызываем обработчик текстовых сообщений
-            handle_text(fake_message)
+            # Генерируем уникальный комментарий для платежа
+            comment = f"topup_{user_id}_{int(time.time())}"
+            
+            # Получаем информацию о кошельке
+            wallet_info = ton_payment.get_wallet_info()
+            if wallet_info:
+                # Сохраняем данные платежа
+                user_states[user_id] = {
+                    "state": "waiting_payment_confirmation",
+                    "payment_method": "ton",
+                    "amount": amount,
+                    "comment": comment
+                }
+                
+                payment_text = (
+                    f"⚡ TON платеж\n\n"
+                    f"💰 Сумма: {amount:.2f} ₽\n"
+                    f"💬 Комментарий: <code>{comment}</code>\n\n"
+                    f"🏦 Адрес кошелька:\n<code>{wallet_info['address']}</code>\n\n"
+                    f"⚠️ ВАЖНО: Обязательно укажите комментарий при переводе!\n"
+                    f"⏳ Ожидаем подтверждения платежа..."
+                )
+                
+                safe_edit_message(
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    text=payment_text,
+                    parse_mode='HTML',
+                    reply_markup=create_cancel_keyboard()
+                )
+            else:
+                safe_edit_message(
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    text="❌ Ошибка получения информации о кошельке",
+                    reply_markup=create_back_keyboard()
+                )
         else:
             # Обычный процесс ввода суммы
             user_states[user_id] = {
@@ -1737,7 +1802,7 @@ def handle_callback(call: CallbackQuery):
                 f"⚪️ Выбран метод: APays\n\n"
                 f"💰 Текущий баланс: {user_data.get('balance', 0):.2f} ₽\n"
                 f"💸 Нужно пополнить: {needed_amount:.2f} ₽\n"
-                f"💳 К доплате (с комиссией {APAYS_COMMISSION_PERCENT}%): {amount_with_commission:.2f} ₽\n\n"
+                f"💳 К оплате (с комиссией {APAYS_COMMISSION_PERCENT}%): {amount_with_commission:.2f} ₽\n\n"
                 f"🔽 Выберите действие:"
             )
             
@@ -1888,21 +1953,48 @@ def handle_callback(call: CallbackQuery):
         logging.info(f"confirm_topup_apays: user_state = {user_state}, amount = {amount}")
         
         if amount > 0:
-            # Создаем фиктивное сообщение для вызова обработки
-            fake_message = type('obj', (object,), {
-                'text': str(amount),
-                'chat': call.message.chat,
-                'from_user': call.message.from_user
-            })
+            # Напрямую вызываем логику пополнения APays
+            if not APAYS_ENABLED or not apays:
+                safe_edit_message(
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    text="❌ APays временно недоступен",
+                    reply_markup=create_back_keyboard()
+                )
+                return
             
-            # Устанавливаем состояние для обработки
-            user_states[user_id] = {
-                "state": "waiting_topup_amount",
-                "payment_method": "apays"
-            }
-            
-            # Вызываем обработчик текстовых сообщений
-            handle_text(fake_message)
+            # Создаем платеж
+            payment_data = apays.create_payment(amount)
+            if payment_data and "payment_url" in payment_data:
+                # Сохраняем данные платежа
+                user_states[user_id] = {
+                    "state": "waiting_payment_confirmation",
+                    "payment_method": "apays",
+                    "payment_id": payment_data["payment_id"],
+                    "amount": amount
+                }
+                
+                payment_text = (
+                    f"💳 APays платеж создан\n\n"
+                    f"💰 Сумма: {amount:.2f} ₽\n"
+                    f"🆔 ID платежа: {payment_data['payment_id']}\n\n"
+                    f"🔗 Ссылка для оплаты:\n{payment_data['payment_url']}\n\n"
+                    f"⏳ Ожидаем подтверждения платежа..."
+                )
+                
+                safe_edit_message(
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    text=payment_text,
+                    reply_markup=create_cancel_keyboard()
+                )
+            else:
+                safe_edit_message(
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    text="❌ Ошибка создания платежа APays",
+                    reply_markup=create_back_keyboard()
+                )
         else:
             safe_edit_message(
                 chat_id=call.message.chat.id,
@@ -1917,21 +2009,53 @@ def handle_callback(call: CallbackQuery):
         amount = user_state.get("needed_amount", 0)
         
         if amount > 0:
-            # Создаем фиктивное сообщение для вызова обработки
-            fake_message = type('obj', (object,), {
-                'text': str(amount),
-                'chat': call.message.chat,
-                'from_user': call.message.from_user
-            })
+            # Напрямую вызываем логику пополнения TON
+            if not TON_ENABLED or not ton_payment:
+                safe_edit_message(
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    text="❌ TON платежи временно недоступны",
+                    reply_markup=create_back_keyboard()
+                )
+                return
             
-            # Устанавливаем состояние для обработки
-            user_states[user_id] = {
-                "state": "waiting_topup_amount",
-                "payment_method": "ton"
-            }
+            # Генерируем уникальный комментарий для платежа
+            comment = f"topup_{user_id}_{int(time.time())}"
             
-            # Вызываем обработчик текстовых сообщений
-            handle_text(fake_message)
+            # Получаем информацию о кошельке
+            wallet_info = ton_payment.get_wallet_info()
+            if wallet_info:
+                # Сохраняем данные платежа
+                user_states[user_id] = {
+                    "state": "waiting_payment_confirmation",
+                    "payment_method": "ton",
+                    "amount": amount,
+                    "comment": comment
+                }
+                
+                payment_text = (
+                    f"⚡ TON платеж\n\n"
+                    f"💰 Сумма: {amount:.2f} ₽\n"
+                    f"💬 Комментарий: <code>{comment}</code>\n\n"
+                    f"🏦 Адрес кошелька:\n<code>{wallet_info['address']}</code>\n\n"
+                    f"⚠️ ВАЖНО: Обязательно укажите комментарий при переводе!\n"
+                    f"⏳ Ожидаем подтверждения платежа..."
+                )
+                
+                safe_edit_message(
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    text=payment_text,
+                    parse_mode='HTML',
+                    reply_markup=create_cancel_keyboard()
+                )
+            else:
+                safe_edit_message(
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    text="❌ Ошибка получения информации о кошельке",
+                    reply_markup=create_back_keyboard()
+                )
         else:
             safe_edit_message(
                 chat_id=call.message.chat.id,
