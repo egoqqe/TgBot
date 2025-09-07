@@ -1785,12 +1785,13 @@ def handle_callback(call: CallbackQuery):
         user_data = users_data.get(user_id, {})
         user_data = update_user_structure(user_data, user_id)
         
-        # Получаем нужную сумму из состояния пользователя (если есть)
+        # Получаем состояние пользователя
         user_state = user_states.get(user_id, {})
-        needed_amount = user_state.get("needed_amount", 0)
         
-        # Если пользователь в состоянии insufficient_balance, получаем сумму оттуда
+        # Получаем нужную сумму в зависимости от состояния
         if user_state.get("state") == "insufficient_balance":
+            needed_amount = user_state.get("needed_amount", 0)
+        else:
             needed_amount = user_state.get("needed_amount", 0)
         
         # Отладочная информация
@@ -1863,12 +1864,13 @@ def handle_callback(call: CallbackQuery):
         user_data = users_data.get(user_id, {})
         user_data = update_user_structure(user_data, user_id)
         
-        # Получаем нужную сумму из состояния пользователя (если есть)
+        # Получаем состояние пользователя
         user_state = user_states.get(user_id, {})
-        needed_amount = user_state.get("needed_amount", 0)
         
-        # Если пользователь в состоянии insufficient_balance, получаем сумму оттуда
+        # Получаем нужную сумму в зависимости от состояния
         if user_state.get("state") == "insufficient_balance":
+            needed_amount = user_state.get("needed_amount", 0)
+        else:
             needed_amount = user_state.get("needed_amount", 0)
         
         if needed_amount > 0:
@@ -1955,7 +1957,15 @@ def handle_callback(call: CallbackQuery):
     elif call.data == "confirm_topup_apays":
         # Подтверждаем пополнение через APays
         user_state = user_states.get(user_id, {})
-        amount = user_state.get("amount_with_commission", 0)
+        
+        # Получаем сумму в зависимости от состояния
+        if user_state.get("state") == "insufficient_balance":
+            needed_amount = user_state.get("needed_amount", 0)
+            commission_rate = APAYS_COMMISSION_PERCENT / 100
+            amount = needed_amount / (1 - commission_rate)
+            amount = round(amount, 2)
+        else:
+            amount = user_state.get("amount_with_commission", 0)
         
         # Отладочная информация
         logging.info(f"confirm_topup_apays: user_state = {user_state}, amount = {amount}")
@@ -2014,7 +2024,12 @@ def handle_callback(call: CallbackQuery):
     elif call.data == "confirm_topup_ton":
         # Подтверждаем пополнение через TON
         user_state = user_states.get(user_id, {})
-        amount = user_state.get("needed_amount", 0)
+        
+        # Получаем сумму в зависимости от состояния
+        if user_state.get("state") == "insufficient_balance":
+            amount = user_state.get("needed_amount", 0)
+        else:
+            amount = user_state.get("needed_amount", 0)
         
         if amount > 0:
             # Напрямую вызываем логику пополнения TON
