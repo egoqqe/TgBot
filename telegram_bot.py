@@ -1014,24 +1014,75 @@ def handle_callback(call: CallbackQuery):
                         user_data = update_user_structure(user_data, user_id)
                         user_data['balance'] = user_data.get('balance', 0) + amount_rub
                         users_data[user_id] = user_data
-                        save_users_data()
+                        save_users_data(users_data)
                         
-                        # Очищаем состояние пользователя
-                        user_states.pop(user_id, None)
+                        # Проверяем, есть ли информация о первоначальной покупке
+                        original_purchase = user_state.get("original_purchase")
                         
-                        success_text = (
-                            f"✅ Платеж подтвержден!\n\n"
-                            f"💰 Получено: {amount_ton:.4f} TON ({amount_rub:.2f} ₽)\n"
-                            f"💳 Новый баланс: {user_data['balance']:.2f} ₽\n\n"
-                            f"🎉 Баланс успешно пополнен!"
-                        )
-                        
-                        safe_edit_message(
-                            chat_id=call.message.chat.id,
-                            message_id=call.message.message_id,
-                            text=success_text,
-                            reply_markup=create_main_menu()
-                        )
+                        if original_purchase:
+                            # Это пополнение из-за недостаточного баланса для покупки звезд
+                            # Продолжаем покупку звезд
+                            stars_amount = original_purchase.get("stars_amount")
+                            cost = original_purchase.get("cost")
+                            
+                            # Проверяем, что баланса теперь достаточно
+                            if user_data.get('balance', 0) >= cost:
+                                # Устанавливаем состояние для продолжения покупки
+                                user_states[user_id] = {
+                                    "state": "waiting_recipient_username",
+                                    "stars_amount": stars_amount,
+                                    "cost": cost
+                                }
+                                
+                                success_text = (
+                                    f"✅ Платеж подтвержден!\n\n"
+                                    f"💰 Получено: {amount_ton:.4f} TON ({amount_rub:.2f} ₽)\n"
+                                    f"💳 Новый баланс: {user_data['balance']:.2f} ₽\n\n"
+                                    f"🎉 Баланс пополнен! Продолжаем покупку {stars_amount} звезд.\n\n"
+                                    f"👤 Введите username получателя (например: @username):"
+                                )
+                                
+                                safe_edit_message(
+                                    chat_id=call.message.chat.id,
+                                    message_id=call.message.message_id,
+                                    text=success_text,
+                                    reply_markup=create_cancel_keyboard()
+                                )
+                            else:
+                                # Баланса все еще недостаточно
+                                user_states.pop(user_id, None)
+                                
+                                success_text = (
+                                    f"✅ Платеж подтвержден!\n\n"
+                                    f"💰 Получено: {amount_ton:.4f} TON ({amount_rub:.2f} ₽)\n"
+                                    f"💳 Новый баланс: {user_data['balance']:.2f} ₽\n\n"
+                                    f"⚠️ Баланса все еще недостаточно для покупки {stars_amount} звезд ({cost:.2f} ₽)\n"
+                                    f"💸 Не хватает: {cost - user_data['balance']:.2f} ₽"
+                                )
+                                
+                                safe_edit_message(
+                                    chat_id=call.message.chat.id,
+                                    message_id=call.message.message_id,
+                                    text=success_text,
+                                    reply_markup=create_main_menu()
+                                )
+                        else:
+                            # Обычное пополнение баланса
+                            user_states.pop(user_id, None)
+                            
+                            success_text = (
+                                f"✅ Платеж подтвержден!\n\n"
+                                f"💰 Получено: {amount_ton:.4f} TON ({amount_rub:.2f} ₽)\n"
+                                f"💳 Новый баланс: {user_data['balance']:.2f} ₽\n\n"
+                                f"🎉 Баланс успешно пополнен!"
+                            )
+                            
+                            safe_edit_message(
+                                chat_id=call.message.chat.id,
+                                message_id=call.message.message_id,
+                                text=success_text,
+                                reply_markup=create_main_menu()
+                            )
                         
                     elif result.get("status") == "pending":
                         # Платеж еще не поступил
@@ -2132,8 +2183,8 @@ def handle_callback(call: CallbackQuery):
             # Создаем платеж через TON
             payment_data = ton_payment.create_payment_request(user_id, needed_amount)
             if payment_data and "error" not in payment_data:
-                # Сохраняем данные платежа
-                user_states[user_id] = {
+                # Сохраняем данные платежа, сохраняя информацию о первоначальной покупке
+                new_state = {
                     "state": "waiting_payment_confirmation",
                     "payment_method": "ton",
                     "amount": needed_amount,
@@ -2143,6 +2194,16 @@ def handle_callback(call: CallbackQuery):
                     "wallet_address": payment_data["wallet_address"],
                     "created_at": int(time.time())
                 }
+                
+                # Если это пополнение из-за недостаточного баланса, сохраняем информацию о покупке
+                if user_state.get("state") == "insufficient_balance":
+                    new_state["original_purchase"] = {
+                        "stars_amount": user_state.get("stars_amount"),
+                        "cost": user_state.get("cost"),
+                        "needed_amount": user_state.get("needed_amount")
+                    }
+                
+                user_states[user_id] = new_state
                 
                 payment_text = (
                     f"📋 Платеж сформирован\n\n"
@@ -2812,28 +2873,81 @@ def auto_check_ton_payments():
                             user_data = update_user_structure(user_data, user_id)
                             user_data['balance'] = user_data.get('balance', 0) + amount_rub
                             users_data[user_id] = user_data
-                            save_users_data()
+                            save_users_data(users_data)
                             
-                            # Очищаем состояние пользователя
-                            user_states.pop(user_id, None)
+                            # Проверяем, есть ли информация о первоначальной покупке
+                            original_purchase = user_state.get("original_purchase")
                             
-                            # Отправляем уведомление пользователю
-                            success_text = (
-                                f"✅ Платеж автоматически подтвержден!\n\n"
-                                f"💰 Получено: {amount_ton:.4f} TON ({amount_rub:.2f} ₽)\n"
-                                f"💳 Новый баланс: {user_data['balance']:.2f} ₽\n\n"
-                                f"🎉 Баланс успешно пополнен!"
-                            )
-                            
-                            try:
-                                bot.send_message(
-                                    chat_id=user_id,
-                                    text=success_text,
-                                    reply_markup=create_main_menu()
+                            if original_purchase:
+                                # Это пополнение из-за недостаточного баланса для покупки звезд
+                                stars_amount = original_purchase.get("stars_amount")
+                                cost = original_purchase.get("cost")
+                                
+                                # Проверяем, что баланса теперь достаточно
+                                if user_data.get('balance', 0) >= cost:
+                                    # Устанавливаем состояние для продолжения покупки
+                                    user_states[user_id] = {
+                                        "state": "waiting_recipient_username",
+                                        "stars_amount": stars_amount,
+                                        "cost": cost
+                                    }
+                                    
+                                    success_text = (
+                                        f"✅ Платеж автоматически подтвержден!\n\n"
+                                        f"💰 Получено: {amount_ton:.4f} TON ({amount_rub:.2f} ₽)\n"
+                                        f"💳 Новый баланс: {user_data['balance']:.2f} ₽\n\n"
+                                        f"🎉 Баланс пополнен! Продолжаем покупку {stars_amount} звезд.\n\n"
+                                        f"👤 Введите username получателя (например: @username):"
+                                    )
+                                    
+                                    try:
+                                        bot.send_message(
+                                            chat_id=user_id,
+                                            text=success_text,
+                                            reply_markup=create_cancel_keyboard()
+                                        )
+                                    except Exception as e:
+                                        logging.error(f"Ошибка отправки уведомления о продолжении покупки: {e}")
+                                else:
+                                    # Баланса все еще недостаточно
+                                    user_states.pop(user_id, None)
+                                    
+                                    success_text = (
+                                        f"✅ Платеж автоматически подтвержден!\n\n"
+                                        f"💰 Получено: {amount_ton:.4f} TON ({amount_rub:.2f} ₽)\n"
+                                        f"💳 Новый баланс: {user_data['balance']:.2f} ₽\n\n"
+                                        f"⚠️ Баланса все еще недостаточно для покупки {stars_amount} звезд ({cost:.2f} ₽)\n"
+                                        f"💸 Не хватает: {cost - user_data['balance']:.2f} ₽"
+                                    )
+                                    
+                                    try:
+                                        bot.send_message(
+                                            chat_id=user_id,
+                                            text=success_text,
+                                            reply_markup=create_main_menu()
+                                        )
+                                    except Exception as e:
+                                        logging.error(f"Ошибка отправки уведомления о недостаточном балансе: {e}")
+                            else:
+                                # Обычное пополнение баланса
+                                user_states.pop(user_id, None)
+                                
+                                success_text = (
+                                    f"✅ Платеж автоматически подтвержден!\n\n"
+                                    f"💰 Получено: {amount_ton:.4f} TON ({amount_rub:.2f} ₽)\n"
+                                    f"💳 Новый баланс: {user_data['balance']:.2f} ₽\n\n"
+                                    f"🎉 Баланс успешно пополнен!"
                                 )
-                                logging.info(f"✅ Автоподтверждение TON платежа для пользователя {user_id}: {amount_ton:.4f} TON")
-                            except Exception as e:
-                                logging.error(f"Ошибка отправки уведомления о подтверждении платежа: {e}")
+                                
+                                try:
+                                    bot.send_message(
+                                        chat_id=user_id,
+                                        text=success_text,
+                                        reply_markup=create_main_menu()
+                                    )
+                                    logging.info(f"✅ Автоподтверждение TON платежа для пользователя {user_id}: {amount_ton:.4f} TON")
+                                except Exception as e:
+                                    logging.error(f"Ошибка отправки уведомления о подтверждении платежа: {e}")
                                 
                     except Exception as e:
                         logging.error(f"Ошибка автопроверки TON платежа {payment_id}: {e}")
