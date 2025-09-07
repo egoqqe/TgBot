@@ -960,6 +960,7 @@ def handle_callback(call: CallbackQuery):
         custom_amount = user_state.get("custom_amount")
         
         if custom_amount:
+            logging.info(f"🔍 DEBUG: custom_amount={custom_amount} (тип: {type(custom_amount)})")
             # Если есть пользовательская сумма, проверяем минимальную сумму для TON
             if custom_amount < TON_MIN_AMOUNT:
                 bot.answer_callback_query(
@@ -982,6 +983,7 @@ def handle_callback(call: CallbackQuery):
                 return
             
             # Создаем платеж через TON
+            logging.info(f"🔍 DEBUG: Создаем TON платеж для user_id={user_id} (int: {int(user_id)}), amount={amount} (тип: {type(amount)})")
             payment_data = ton_payment.create_payment_request(int(user_id), amount)
             if payment_data and "error" not in payment_data:
                 # Сохраняем данные платежа

@@ -94,6 +94,20 @@ class TonPayment:
     def create_payment_request(self, user_id: int, amount_rub: float) -> Dict:
         """Создает запрос на пополнение через TON"""
         try:
+            # Добавляем детальное логирование для отладки
+            logging.info(f"🔍 DEBUG: create_payment_request вызвана с user_id={user_id} (тип: {type(user_id)}), amount_rub={amount_rub}")
+            
+            # Валидация входных данных
+            if not isinstance(user_id, int):
+                error_msg = f"Неверный user_id: {user_id} (тип: {type(user_id)}, ожидается int)"
+                logging.error(f"❌ {error_msg}")
+                return {"error": error_msg}
+            
+            if not isinstance(amount_rub, (int, float)) or amount_rub <= 0:
+                error_msg = f"Неверная сумма: {amount_rub} (тип: {type(amount_rub)})"
+                logging.error(f"❌ {error_msg}")
+                return {"error": error_msg}
+            
             ton_amount = self.rubles_to_ton(amount_rub)
             payment_id = f"ton_{user_id}_{int(time.time())}"
             
