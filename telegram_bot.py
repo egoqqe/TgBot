@@ -2119,32 +2119,69 @@ def handle_callback(call: CallbackQuery):
         logging.info(f"topup_ton: needed_amount = {needed_amount}")
         
         if needed_amount > 0:
-            topup_text = (
-                f"⚪️ Выбран метод: TON\n\n"
-                f"💰 Текущий баланс: {user_data.get('balance', 0):.2f} ₽\n"
-                f"💸 Нужно пополнить: {needed_amount:.2f} ₽\n"
-                f"⚡ К оплате (без комиссии): {needed_amount:.2f} ₽\n\n"
-                f"🔽 Выберите действие:"
-            )
+            # Сразу создаем платеж через TON (как в payment_method_ton)
+            if not TON_ENABLED or not ton_payment:
+                safe_edit_message(
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    text="❌ TON платежи временно недоступны",
+                    reply_markup=create_back_keyboard()
+                )
+                return
             
-            # Сохраняем данные для пополнения
-            user_states[user_id] = {
-                "state": "waiting_topup_amount",
-                "payment_method": "ton",
-                "needed_amount": needed_amount
-            }
-            
-            # Создаем клавиатуру с возможностью изменить сумму
-            keyboard = InlineKeyboardMarkup()
-            keyboard.add(
-                InlineKeyboardButton(f"⚡ Пополнить {needed_amount:.2f} ₽", callback_data="confirm_topup_ton")
-            )
-            keyboard.add(
-                InlineKeyboardButton("💰 Другая сумма", callback_data="change_amount")
-            )
-            keyboard.add(
-                InlineKeyboardButton(f"{EMOJIS['back']} Назад", callback_data="back_main")
-            )
+            # Создаем платеж через TON
+            payment_data = ton_payment.create_payment_request(user_id, needed_amount)
+            if payment_data and "error" not in payment_data:
+                # Сохраняем данные платежа
+                user_states[user_id] = {
+                    "state": "waiting_payment_confirmation",
+                    "payment_method": "ton",
+                    "amount": needed_amount,
+                    "payment_id": payment_data["payment_id"],
+                    "comment": payment_data["comment"],
+                    "amount_ton": payment_data["amount_ton"],
+                    "wallet_address": payment_data["wallet_address"],
+                    "created_at": int(time.time())
+                }
+                
+                payment_text = (
+                    f"📋 Платеж сформирован\n\n"
+                    f"💸 Сумма к отправке: {payment_data['amount_ton']:.4f} TON\n"
+                    f"⚠️ Комментарий: <code>{payment_data['comment']}</code>\n"
+                    f"💳 Адрес для оплаты: <code>{payment_data['wallet_address']}</code>\n\n"
+                    f"‼️ Обязательно указывайте комментарий при отправке монет, в противном случае - пополнение не будет засчитано\n"
+                    f"‼️ Окончательная сумма к получению будет рассчитана в момент получения монет\n\n"
+                    f"📱 Для оплаты:\n"
+                    f"1. Откройте TON кошелек\n"
+                    f"2. Отправьте {payment_data['amount_ton']:.4f} TON на указанный адрес\n"
+                    f"3. В комментарии укажите: <code>{payment_data['comment']}</code>\n"
+                    f"4. Нажмите \"Проверить оплату\" после перевода"
+                )
+                
+                # Создаем клавиатуру с кнопкой проверки оплаты
+                keyboard = InlineKeyboardMarkup()
+                keyboard.add(
+                    InlineKeyboardButton("🔍 Проверить оплату", callback_data=f"check_ton_payment_{payment_data['payment_id']}")
+                )
+                keyboard.add(
+                    InlineKeyboardButton("❌ Отменить", callback_data="cancel")
+                )
+                
+                safe_edit_message(
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    text=payment_text,
+                    reply_markup=keyboard
+                )
+            else:
+                error_msg = payment_data.get("error", "Неизвестная ошибка") if payment_data else "Ошибка создания платежа"
+                safe_edit_message(
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    text=f"❌ Ошибка создания TON платежа: {error_msg}",
+                    reply_markup=create_back_keyboard()
+                )
+                return
         else:
             # Если нет нужной суммы, показываем обычное меню
             topup_text = (
