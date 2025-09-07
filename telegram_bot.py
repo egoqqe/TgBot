@@ -457,6 +457,18 @@ def create_recipient_keyboard():
     )
     return keyboard
 
+# Создаем клавиатуру для пополнения баланса
+def create_topup_keyboard():
+    keyboard = InlineKeyboardMarkup(row_width=2)
+    keyboard.add(
+        InlineKeyboardButton("💳 APays", callback_data="topup_apays"),
+        InlineKeyboardButton("⚡ TON", callback_data="topup_ton")
+    )
+    keyboard.add(
+        InlineKeyboardButton(f"{EMOJIS['back']} Назад", callback_data="back_main")
+    )
+    return keyboard
+
 # Создаем клавиатуру "Назад"
 def create_back_keyboard():
     keyboard = InlineKeyboardMarkup()
@@ -1624,6 +1636,7 @@ def handle_callback(call: CallbackQuery):
         discount = user_data.get("referral_discount", 0.0)
         stars_bought = user_data.get("stars_bought", 0)
         total_saved = stars_bought * discount
+        qualified_referrals = sum(1 for ref in user_data.get("referrals", []) if ref.get("total_spent", 0) >= 500.0)
         
         if discount > 0:
             savings_text = f"💵 Всего сэкономлено: {total_saved:.2f} ₽"
@@ -1649,6 +1662,72 @@ def handle_callback(call: CallbackQuery):
             message_id=call.message.message_id,
             text=earnings_text,
             reply_markup=create_referral_keyboard()
+        )
+        
+    elif call.data == "topup_apays":
+        # Переходим к пополнению через APays
+        user_data = users_data.get(user_id, {})
+        user_data = update_user_structure(user_data, user_id)
+        
+        topup_text = (
+            "💳 Пополнение баланса\n\n"
+            f"💰 Текущий баланс: {user_data.get('balance', 0):.2f} ₽\n"
+            f"💸 Минимальная сумма: {PAYMENT_MIN_AMOUNT} ₽\n"
+            f"💸 Максимальная сумма: {PAYMENT_MAX_AMOUNT} ₽\n\n"
+            "🔽 Выберите способ оплаты:"
+        )
+        
+        # Создаем клавиатуру с выбором способа оплаты
+        keyboard = InlineKeyboardMarkup()
+        if APAYS_ENABLED and apays:
+            keyboard.add(
+                InlineKeyboardButton(f"💳 APays (+{APAYS_COMMISSION_PERCENT}%)", callback_data="payment_method_apays")
+            )
+        keyboard.add(
+            InlineKeyboardButton(f"⚡ Прямой перевод TON (Без комиссии)", callback_data="payment_method_ton")
+        )
+        keyboard.add(
+            InlineKeyboardButton(f"{EMOJIS['back']} Назад", callback_data="back_main")
+        )
+        
+        safe_edit_message(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text=topup_text,
+            reply_markup=keyboard
+        )
+        
+    elif call.data == "topup_ton":
+        # Переходим к пополнению через TON
+        user_data = users_data.get(user_id, {})
+        user_data = update_user_structure(user_data, user_id)
+        
+        topup_text = (
+            "💳 Пополнение баланса\n\n"
+            f"💰 Текущий баланс: {user_data.get('balance', 0):.2f} ₽\n"
+            f"💸 Минимальная сумма: {PAYMENT_MIN_AMOUNT} ₽\n"
+            f"💸 Максимальная сумма: {PAYMENT_MAX_AMOUNT} ₽\n\n"
+            "🔽 Выберите способ оплаты:"
+        )
+        
+        # Создаем клавиатуру с выбором способа оплаты
+        keyboard = InlineKeyboardMarkup()
+        if APAYS_ENABLED and apays:
+            keyboard.add(
+                InlineKeyboardButton(f"💳 APays (+{APAYS_COMMISSION_PERCENT}%)", callback_data="payment_method_apays")
+            )
+        keyboard.add(
+            InlineKeyboardButton(f"⚡ Прямой перевод TON (Без комиссии)", callback_data="payment_method_ton")
+        )
+        keyboard.add(
+            InlineKeyboardButton(f"{EMOJIS['back']} Назад", callback_data="back_main")
+        )
+        
+        safe_edit_message(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text=topup_text,
+            reply_markup=keyboard
         )
 
     # Callback уже отвечен в начале функции
@@ -1791,10 +1870,17 @@ def handle_text(message: Message):
                 cost = stars_amount * effective_price
                 
                 if user_data.get('balance', 0) < cost:
+                    insufficient_text = (
+                        f"❌ Недостаточно средств для покупки\n\n"
+                        f"💰 Текущий баланс: {user_data.get('balance', 0):.2f} ₽\n"
+                        f"💸 Требуется: {cost:.2f} ₽\n"
+                        f"💸 Не хватает: {cost - user_data.get('balance', 0):.2f} ₽\n\n"
+                        f"💳 Пополните баланс для продолжения покупки"
+                    )
                     bot.reply_to(
                         message,
-                        f"❌ Недостаточно средств. Нужно: {cost:.2f} ₽",
-                        reply_markup=create_cancel_keyboard()
+                        insufficient_text,
+                        reply_markup=create_topup_keyboard()
                     )
                     return
                     
