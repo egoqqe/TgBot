@@ -4,7 +4,7 @@ import json
 import os
 import time
 from datetime import datetime
-from config import BOT_TOKEN, EMOJIS, APAYS_CLIENT_ID, APAYS_SECRET_KEY, APAYS_BASE_URL, PAYMENT_MIN_AMOUNT, PAYMENT_MAX_AMOUNT, APAYS_ENABLED, TON_WALLET_ADDRESS, TON_COMMISSION_PERCENT, TON_ENABLED, APAYS_COMMISSION_PERCENT
+from config import BOT_TOKEN, EMOJIS, APAYS_CLIENT_ID, APAYS_SECRET_KEY, APAYS_BASE_URL, PAYMENT_MIN_AMOUNT, PAYMENT_MAX_AMOUNT, APAYS_ENABLED, TON_WALLET_ADDRESS, TON_COMMISSION_PERCENT, TON_ENABLED, APAYS_COMMISSION_PERCENT, APAYS_MIN_AMOUNT, TON_MIN_AMOUNT
 from FragmentApi.BuyStars import buy_stars
 from FragmentApi.APaysPayment import APaysPayment
 from FragmentApi.TonPayment import TonPayment
@@ -734,7 +734,8 @@ def handle_callback(call: CallbackQuery):
         topup_text = (
             "💳 Пополнение баланса\n\n"
             f"💰 Текущий баланс: {user_data.get('balance', 0):.2f} ₽\n"
-            f"💸 Минимальная сумма: {PAYMENT_MIN_AMOUNT} ₽\n"
+            f"💸 APays: от {APAYS_MIN_AMOUNT} ₽\n"
+            f"💸 TON: от {TON_MIN_AMOUNT} ₽\n"
             f"💸 Максимальная сумма: {PAYMENT_MAX_AMOUNT} ₽\n\n"
             "🔽 Выберите способ оплаты:"
         )
@@ -765,6 +766,14 @@ def handle_callback(call: CallbackQuery):
         custom_amount = user_state.get("custom_amount")
         
         if custom_amount:
+            # Если есть пользовательская сумма, проверяем минимальную сумму для APays
+            if custom_amount < APAYS_MIN_AMOUNT:
+                bot.answer_callback_query(
+                    call.id, 
+                    f"❌ Минимальная сумма для APays: {APAYS_MIN_AMOUNT} ₽"
+                )
+                return
+            
             # Если есть пользовательская сумма, сразу переходим к пополнению
             amount = custom_amount
             
@@ -835,6 +844,14 @@ def handle_callback(call: CallbackQuery):
         custom_amount = user_state.get("custom_amount")
         
         if custom_amount:
+            # Если есть пользовательская сумма, проверяем минимальную сумму для TON
+            if custom_amount < TON_MIN_AMOUNT:
+                bot.answer_callback_query(
+                    call.id, 
+                    f"❌ Минимальная сумма для TON: {TON_MIN_AMOUNT} ₽"
+                )
+                return
+            
             # Если есть пользовательская сумма, сразу переходим к пополнению
             amount = custom_amount
             
@@ -2082,6 +2099,14 @@ def handle_callback(call: CallbackQuery):
         # Получаем нужную сумму в зависимости от состояния
         if user_state.get("state") == "insufficient_balance":
             needed_amount = user_state.get("needed_amount", 0)
+            
+            # Проверяем минимальную сумму для APays
+            if needed_amount < APAYS_MIN_AMOUNT:
+                bot.answer_callback_query(
+                    call.id, 
+                    f"❌ Минимальная сумма для APays: {APAYS_MIN_AMOUNT} ₽"
+                )
+                return
         else:
             needed_amount = user_state.get("needed_amount", 0)
         
@@ -2126,7 +2151,8 @@ def handle_callback(call: CallbackQuery):
             topup_text = (
                 "💳 Пополнение баланса\n\n"
                 f"💰 Текущий баланс: {user_data.get('balance', 0):.2f} ₽\n"
-                f"💸 Минимальная сумма: {PAYMENT_MIN_AMOUNT} ₽\n"
+                f"💸 APays: от {APAYS_MIN_AMOUNT} ₽\n"
+                f"💸 TON: от {TON_MIN_AMOUNT} ₽\n"
                 f"💸 Максимальная сумма: {PAYMENT_MAX_AMOUNT} ₽\n\n"
                 "🔽 Выберите способ оплаты:"
             )
@@ -2164,6 +2190,14 @@ def handle_callback(call: CallbackQuery):
         # Получаем нужную сумму в зависимости от состояния
         if user_state.get("state") == "insufficient_balance":
             needed_amount = user_state.get("needed_amount", 0)
+            
+            # Проверяем минимальную сумму для TON
+            if needed_amount < TON_MIN_AMOUNT:
+                bot.answer_callback_query(
+                    call.id, 
+                    f"❌ Минимальная сумма для TON: {TON_MIN_AMOUNT} ₽"
+                )
+                return
         else:
             needed_amount = user_state.get("needed_amount", 0)
         
@@ -2248,7 +2282,8 @@ def handle_callback(call: CallbackQuery):
             topup_text = (
                 "💳 Пополнение баланса\n\n"
                 f"💰 Текущий баланс: {user_data.get('balance', 0):.2f} ₽\n"
-                f"💸 Минимальная сумма: {PAYMENT_MIN_AMOUNT} ₽\n"
+                f"💸 APays: от {APAYS_MIN_AMOUNT} ₽\n"
+                f"💸 TON: от {TON_MIN_AMOUNT} ₽\n"
                 f"💸 Максимальная сумма: {PAYMENT_MAX_AMOUNT} ₽\n\n"
                 "🔽 Выберите способ оплаты:"
             )
@@ -2280,7 +2315,8 @@ def handle_callback(call: CallbackQuery):
         change_text = (
             "💰 Введите сумму пополнения\n\n"
             f"💰 Текущий баланс: {user_data.get('balance', 0):.2f} ₽\n"
-            f"💸 Минимальная сумма: {PAYMENT_MIN_AMOUNT} ₽\n"
+            f"💸 APays: от {APAYS_MIN_AMOUNT} ₽\n"
+            f"💸 TON: от {TON_MIN_AMOUNT} ₽\n"
             f"💸 Максимальная сумма: {PAYMENT_MAX_AMOUNT} ₽\n\n"
             f"Введите сумму в рублях:"
         )
@@ -2304,6 +2340,15 @@ def handle_callback(call: CallbackQuery):
         # Получаем сумму в зависимости от состояния
         if user_state.get("state") == "insufficient_balance":
             needed_amount = user_state.get("needed_amount", 0)
+            
+            # Проверяем минимальную сумму для APays
+            if needed_amount < APAYS_MIN_AMOUNT:
+                bot.answer_callback_query(
+                    call.id, 
+                    f"❌ Минимальная сумма для APays: {APAYS_MIN_AMOUNT} ₽"
+                )
+                return
+            
             commission_rate = APAYS_COMMISSION_PERCENT / 100
             amount = needed_amount / (1 - commission_rate)
             amount = round(amount, 2)
@@ -2374,6 +2419,14 @@ def handle_callback(call: CallbackQuery):
         # Получаем сумму в зависимости от состояния
         if user_state.get("state") == "insufficient_balance":
             amount = user_state.get("needed_amount", 0)
+            
+            # Проверяем минимальную сумму для TON
+            if amount < TON_MIN_AMOUNT:
+                bot.answer_callback_query(
+                    call.id, 
+                    f"❌ Минимальная сумма для TON: {TON_MIN_AMOUNT} ₽"
+                )
+                return
         elif user_state.get("state") == "waiting_topup_amount":
             amount = user_state.get("needed_amount", 0)
         else:
@@ -2468,7 +2521,11 @@ def handle_text(message: Message):
         
         try:
             amount = float(message.text)
-            if PAYMENT_MIN_AMOUNT <= amount <= PAYMENT_MAX_AMOUNT:
+            
+            # Проверяем минимальную сумму в зависимости от способа оплаты
+            min_amount = APAYS_MIN_AMOUNT if payment_method == "apays" else TON_MIN_AMOUNT
+            
+            if min_amount <= amount <= PAYMENT_MAX_AMOUNT:
                 
                 if payment_method == "apays":
                     # Обработка APays
@@ -2581,7 +2638,7 @@ def handle_text(message: Message):
             else:
                 bot.reply_to(
                     message,
-                    f"❌ Сумма должна быть от {PAYMENT_MIN_AMOUNT} до {PAYMENT_MAX_AMOUNT} ₽!",
+                    f"❌ Сумма должна быть от {min_amount} до {PAYMENT_MAX_AMOUNT} ₽!",
                     reply_markup=create_cancel_keyboard()
                 )
         except ValueError:
@@ -2710,12 +2767,12 @@ def handle_text(message: Message):
         try:
             amount = float(message.text)
             
-            # Если сумма меньше минимальной, устанавливаем минимальную сумму 50 рублей
-            if amount < 50:
-                amount = 50
+            # Проверяем минимальную сумму (используем TON как самую низкую)
+            if amount < TON_MIN_AMOUNT:
+                amount = TON_MIN_AMOUNT
                 bot.reply_to(
                     message,
-                    f"⚠️ Минимальная сумма пополнения: 50 ₽\nУстановлена сумма: {amount:.2f} ₽"
+                    f"⚠️ Минимальная сумма пополнения: {TON_MIN_AMOUNT} ₽\nУстановлена сумма: {amount:.2f} ₽"
                 )
             
             if amount <= PAYMENT_MAX_AMOUNT:
@@ -2771,7 +2828,8 @@ def handle_text(message: Message):
         # Обработка ввода пользовательской суммы пополнения
         try:
             amount = float(message.text)
-            if PAYMENT_MIN_AMOUNT <= amount <= PAYMENT_MAX_AMOUNT:
+            # Для пользовательской суммы используем минимальную сумму TON (самую низкую)
+            if TON_MIN_AMOUNT <= amount <= PAYMENT_MAX_AMOUNT:
                 # Показываем меню выбора способа оплаты с введенной суммой
                 user_data = users_data.get(user_id, {})
                 user_data = update_user_structure(user_data, user_id)
@@ -2810,7 +2868,7 @@ def handle_text(message: Message):
             else:
                 bot.reply_to(
                     message,
-                    f"❌ Сумма должна быть от {PAYMENT_MIN_AMOUNT} до {PAYMENT_MAX_AMOUNT} ₽!",
+                    f"❌ Сумма должна быть от {TON_MIN_AMOUNT} до {PAYMENT_MAX_AMOUNT} ₽!",
                     reply_markup=create_cancel_keyboard()
                 )
         except ValueError:
