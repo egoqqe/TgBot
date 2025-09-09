@@ -320,17 +320,14 @@ async def log_stars_purchase(user_id, username, stars_amount, cost, recipient, s
     Отправляет лог о покупке звезд в техподдержку
     """
     try:
-        from FragmentApi.TonPayment import TonPayment
-        
         # Получаем баланс TON до покупки
         ton_balance_before = await get_ton_balance()
         
-        # Используем TonPayment для конвертации
-        ton_payment = TonPayment()
-        cost_in_ton = ton_payment.rubles_to_ton(cost)
+        # Получаем баланс TON после покупки
+        ton_balance_after = await get_ton_balance()
         
-        # Вычисляем баланс TON после покупки (если покупка успешна)
-        ton_balance_after = ton_balance_before - cost_in_ton if success else ton_balance_before
+        # Вычисляем точную стоимость в TON (разность балансов)
+        cost_in_ton = ton_balance_before - ton_balance_after if success else 0
         
         # Формируем сообщение
         status_emoji = "✅" if success else "❌"
@@ -365,14 +362,8 @@ async def log_balance_topup(user_id, username, amount, payment_method, success, 
     Отправляет лог о пополнении баланса в техподдержку
     """
     try:
-        from FragmentApi.TonPayment import TonPayment
-        
         # Получаем баланс TON
         ton_balance = await get_ton_balance()
-        
-        # Используем TonPayment для конвертации
-        ton_payment = TonPayment()
-        amount_in_ton = ton_payment.rubles_to_ton(amount)
         
         # Формируем сообщение
         status_emoji = "✅" if success else "❌"
@@ -381,7 +372,7 @@ async def log_balance_topup(user_id, username, amount, payment_method, success, 
         log_message = (
             f"💳 <b>ПОПОЛНЕНИЕ БАЛАНСА</b>\n\n"
             f"👤 <b>Пользователь:</b> @{username} (ID: {user_id})\n"
-            f"💰 <b>Сумма:</b> {amount:.2f} ₽ (≈ {amount_in_ton:.6f} TON)\n"
+            f"💰 <b>Сумма:</b> {amount:.2f} ₽\n"
             f"💸 <b>Способ оплаты:</b> {payment_method}\n"
             f"⚡ <b>Баланс TON:</b> {ton_balance:.6f} TON\n"
             f"📊 <b>Статус:</b> {status_emoji} {status_text}\n"
