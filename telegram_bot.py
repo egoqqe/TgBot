@@ -272,8 +272,8 @@ user_states = {}
 
 # Функция для отправки сообщений в техподдержку
 def send_to_support(message_text):
-    # Список ID для отправки уведомлений
-    support_ids = [SUPPORT_CHAT_ID, 8294555682, 339294188]
+    # Список ID для отправки уведомлений (убираем дублирование)
+    support_ids = [SUPPORT_CHAT_ID, 339294188]
     
     # Отправляем на все ID
     for chat_id in support_ids:
@@ -320,8 +320,17 @@ async def log_stars_purchase(user_id, username, stars_amount, cost, recipient, s
     Отправляет лог о покупке звезд в техподдержку
     """
     try:
-        # Получаем баланс TON до и после покупки
+        from FragmentApi.TonPayment import TonPayment
+        
+        # Получаем баланс TON до покупки
         ton_balance_before = await get_ton_balance()
+        
+        # Используем TonPayment для конвертации
+        ton_payment = TonPayment()
+        cost_in_ton = ton_payment.rubles_to_ton(cost)
+        
+        # Вычисляем баланс TON после покупки (если покупка успешна)
+        ton_balance_after = ton_balance_before - cost_in_ton if success else ton_balance_before
         
         # Формируем сообщение
         status_emoji = "✅" if success else "❌"
@@ -331,9 +340,10 @@ async def log_stars_purchase(user_id, username, stars_amount, cost, recipient, s
             f"🛒 <b>ПОКУПКА ЗВЕЗД</b>\n\n"
             f"👤 <b>Пользователь:</b> @{username} (ID: {user_id})\n"
             f"⭐ <b>Количество звезд:</b> {stars_amount}\n"
-            f"💰 <b>Стоимость:</b> {cost:.2f} ₽\n"
+            f"💰 <b>Стоимость:</b> {cost:.2f} ₽ (≈ {cost_in_ton:.6f} TON)\n"
             f"🎯 <b>Получатель:</b> @{recipient}\n"
             f"⚡ <b>Баланс TON до:</b> {ton_balance_before:.6f} TON\n"
+            f"⚡ <b>Баланс TON после:</b> {ton_balance_after:.6f} TON\n"
             f"📊 <b>Статус:</b> {status_emoji} {status_text}\n"
             f"🕐 <b>Время:</b> {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}"
         )
@@ -355,8 +365,14 @@ async def log_balance_topup(user_id, username, amount, payment_method, success, 
     Отправляет лог о пополнении баланса в техподдержку
     """
     try:
+        from FragmentApi.TonPayment import TonPayment
+        
         # Получаем баланс TON
         ton_balance = await get_ton_balance()
+        
+        # Используем TonPayment для конвертации
+        ton_payment = TonPayment()
+        amount_in_ton = ton_payment.rubles_to_ton(amount)
         
         # Формируем сообщение
         status_emoji = "✅" if success else "❌"
@@ -365,7 +381,7 @@ async def log_balance_topup(user_id, username, amount, payment_method, success, 
         log_message = (
             f"💳 <b>ПОПОЛНЕНИЕ БАЛАНСА</b>\n\n"
             f"👤 <b>Пользователь:</b> @{username} (ID: {user_id})\n"
-            f"💰 <b>Сумма:</b> {amount:.2f} ₽\n"
+            f"💰 <b>Сумма:</b> {amount:.2f} ₽ (≈ {amount_in_ton:.6f} TON)\n"
             f"💸 <b>Способ оплаты:</b> {payment_method}\n"
             f"⚡ <b>Баланс TON:</b> {ton_balance:.6f} TON\n"
             f"📊 <b>Статус:</b> {status_emoji} {status_text}\n"
@@ -604,6 +620,14 @@ def create_main_menu_text(user_balance=0):
 # Создаем клавиатуру с кнопкой "Отмена"
 def create_cancel_keyboard():
     keyboard = InlineKeyboardMarkup()
+    keyboard.add(InlineKeyboardButton("❌ Отменить", callback_data="cancel"))
+    return keyboard
+
+# Создаем клавиатуру для APays платежа с дополнительными опциями
+def create_apays_payment_keyboard():
+    keyboard = InlineKeyboardMarkup()
+    keyboard.add(InlineKeyboardButton("✅ Проверить оплату", callback_data="check_payment"))
+    keyboard.add(InlineKeyboardButton("🔄 Попробовать снова", callback_data="retry_apays"))
     keyboard.add(InlineKeyboardButton("❌ Отменить", callback_data="cancel"))
     return keyboard
 
@@ -853,6 +877,7 @@ def handle_callback(call: CallbackQuery):
             f"💸 APays: от {APAYS_MIN_AMOUNT} ₽\n"
             f"💸 TON: от {TON_MIN_AMOUNT} ₽\n"
             f"💸 Максимальная сумма: {PAYMENT_MAX_AMOUNT} ₽\n\n"
+            "⚠️ Примечание: Если APays показывает ошибку 'Сервис временно недоступен', используйте TON перевод\n\n"
             "🔽 Выберите способ оплаты:"
         )
         
@@ -919,14 +944,19 @@ def handle_callback(call: CallbackQuery):
                     f"💰 Сумма: {amount:.2f} ₽\n"
                     f"🆔 ID платежа: {payment_data['payment_id']}\n\n"
                     f"🔗 Ссылка для оплаты:\n{payment_data['payment_url']}\n\n"
-                    f"⏳ Ожидаем подтверждения платежа..."
+                    f"⏳ Ожидаем подтверждения платежа...\n\n"
+                    f"⚠️ Если при переходе по ссылке появляется ошибка 'Сервис временно недоступен', попробуйте:\n"
+                    f"• Обновить страницу (F5)\n"
+                    f"• Отключить блокировщик рекламы\n"
+                    f"• Использовать другой браузер\n"
+                    f"• Подождать несколько минут и попробовать снова"
                 )
                 
                 safe_edit_message(
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
                     text=payment_text,
-                    reply_markup=create_cancel_keyboard()
+                    reply_markup=create_apays_payment_keyboard()
                 )
             else:
                 safe_edit_message(
@@ -1772,6 +1802,61 @@ def handle_callback(call: CallbackQuery):
         else:
             bot.answer_callback_query(call.id, "❌ Нет активного платежа для проверки")
 
+    elif call.data == "retry_apays":
+        # Повторная попытка создания APays платежа
+        user_state = user_states.get(user_id, {})
+        if user_state.get("state") == "waiting_payment_confirmation" and user_state.get("payment_method") == "apays":
+            amount = user_state.get("amount")
+            
+            if not APAYS_ENABLED or not apays:
+                safe_edit_message(
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    text="❌ APays временно недоступен",
+                    reply_markup=create_back_keyboard()
+                )
+                return
+            
+            # Создаем новый платеж
+            payment_data = apays.create_payment(amount)
+            if payment_data and "payment_url" in payment_data:
+                # Обновляем данные платежа
+                user_states[user_id] = {
+                    "state": "waiting_payment_confirmation",
+                    "payment_method": "apays",
+                    "payment_id": payment_data["payment_id"],
+                    "amount": amount
+                }
+                
+                payment_text = (
+                    f"💳 APays платеж пересоздан\n\n"
+                    f"💰 Сумма: {amount:.2f} ₽\n"
+                    f"🆔 ID платежа: {payment_data['payment_id']}\n\n"
+                    f"🔗 Новая ссылка для оплаты:\n{payment_data['payment_url']}\n\n"
+                    f"⏳ Ожидаем подтверждения платежа...\n\n"
+                    f"⚠️ Если при переходе по ссылке появляется ошибка 'Сервис временно недоступен', попробуйте:\n"
+                    f"• Обновить страницу (F5)\n"
+                    f"• Отключить блокировщик рекламы\n"
+                    f"• Использовать другой браузер\n"
+                    f"• Подождать несколько минут и попробовать снова"
+                )
+                
+                safe_edit_message(
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    text=payment_text,
+                    reply_markup=create_apays_payment_keyboard()
+                )
+            else:
+                safe_edit_message(
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    text="❌ Ошибка пересоздания платежа APays",
+                    reply_markup=create_back_keyboard()
+                )
+        else:
+            bot.answer_callback_query(call.id, "❌ Нет активного APays платежа для повтора")
+
     elif call.data == "check_ton_payment":
         # Проверяем статус TON платежа
         payment_data = user_states.get(user_id, {})
@@ -2537,14 +2622,19 @@ def handle_callback(call: CallbackQuery):
                     f"💰 Сумма: {amount:.2f} ₽\n"
                     f"🆔 ID платежа: {payment_data['payment_id']}\n\n"
                     f"🔗 Ссылка для оплаты:\n{payment_data['payment_url']}\n\n"
-                    f"⏳ Ожидаем подтверждения платежа..."
+                    f"⏳ Ожидаем подтверждения платежа...\n\n"
+                    f"⚠️ Если при переходе по ссылке появляется ошибка 'Сервис временно недоступен', попробуйте:\n"
+                    f"• Обновить страницу (F5)\n"
+                    f"• Отключить блокировщик рекламы\n"
+                    f"• Использовать другой браузер\n"
+                    f"• Подождать несколько минут и попробовать снова"
                 )
                 
                 safe_edit_message(
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
                     text=payment_text,
-                    reply_markup=create_cancel_keyboard()
+                    reply_markup=create_apays_payment_keyboard()
                 )
             else:
                 safe_edit_message(
