@@ -320,14 +320,18 @@ async def log_stars_purchase(user_id, username, stars_amount, cost, recipient, s
     Отправляет лог о покупке звезд в техподдержку
     """
     try:
-        # Получаем баланс TON до покупки
-        ton_balance_before = await get_ton_balance()
+        # Получаем текущий баланс TON
+        current_ton_balance = await get_ton_balance()
         
-        # Получаем баланс TON после покупки
-        ton_balance_after = await get_ton_balance()
+        # Константа: 1 звезда = 0.0048 TON
+        TON_PER_STAR = 0.0048
         
-        # Вычисляем точную стоимость в TON (разность балансов)
-        cost_in_ton = ton_balance_before - ton_balance_after if success else 0
+        # Вычисляем стоимость в TON по формуле
+        cost_in_ton = stars_amount * TON_PER_STAR if success else 0
+        
+        # Вычисляем баланс до и после покупки
+        ton_balance_before = current_ton_balance + cost_in_ton if success else current_ton_balance
+        ton_balance_after = current_ton_balance
         
         # Формируем сообщение
         status_emoji = "✅" if success else "❌"
