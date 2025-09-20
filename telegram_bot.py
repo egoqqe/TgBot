@@ -272,23 +272,62 @@ user_states = {}
 
 # Функция для отправки сообщений в техподдержку
 def send_to_support(message_text):
-    # Список ID для отправки уведомлений (убираем дублирование)
-    support_ids = [SUPPORT_CHAT_ID, 339294188]
+    """
+    Отправляет сообщение в техподдержку с улучшенной обработкой ошибок
+    """
+    success_count = 0
+    total_attempts = 0
     
-    # Отправляем на все ID
-    for chat_id in support_ids:
-        try:
-            bot.send_message(chat_id=chat_id, text=message_text, parse_mode='HTML')
-            logging.info(f"✅ Сообщение отправлено в техподдержку: {chat_id}")
-        except Exception as e:
-            logging.error(f"❌ Ошибка отправки в техподдержку {chat_id}: {e}")
-    
-    # Пытаемся отправить по username как резервный вариант
+    # Основной канал техподдержки
     try:
-        bot.send_message(chat_id=SUPPORT_USERNAME, text=message_text, parse_mode='HTML')
-        logging.info(f"✅ Сообщение отправлено в техподдержку: {SUPPORT_USERNAME}")
+        total_attempts += 1
+        bot.send_message(chat_id=SUPPORT_CHAT_ID, text=message_text, parse_mode='HTML')
+        logging.info(f"✅ Сообщение отправлено в техподдержку (ID: {SUPPORT_CHAT_ID})")
+        success_count += 1
     except Exception as e:
-        logging.error(f"❌ Ошибка отправки в техподдержку по username: {e}")
+        logging.error(f"❌ Ошибка отправки в техподдержку по ID {SUPPORT_CHAT_ID}: {e}")
+        
+        # Пытаемся отправить по username как резервный вариант
+        try:
+            total_attempts += 1
+            bot.send_message(chat_id=SUPPORT_USERNAME, text=message_text, parse_mode='HTML')
+            logging.info(f"✅ Сообщение отправлено в техподдержку по username: {SUPPORT_USERNAME}")
+            success_count += 1
+        except Exception as e2:
+            logging.error(f"❌ Ошибка отправки в техподдержку по username {SUPPORT_USERNAME}: {e2}")
+    
+    # Дополнительный резервный ID (если нужен)
+    backup_chat_id = 339294188
+    if success_count == 0:  # Отправляем на резервный только если основной не сработал
+        try:
+            total_attempts += 1
+            bot.send_message(chat_id=backup_chat_id, text=message_text, parse_mode='HTML')
+            logging.info(f"✅ Сообщение отправлено на резервный канал (ID: {backup_chat_id})")
+            success_count += 1
+        except Exception as e:
+            logging.error(f"❌ Ошибка отправки на резервный канал {backup_chat_id}: {e}")
+    
+    # Логируем итоговый результат
+    if success_count == 0:
+        logging.critical(f"❌ КРИТИЧНО: Не удалось отправить уведомление в техподдержку! Попыток: {total_attempts}")
+    else:
+        logging.info(f"📤 Уведомление доставлено в техподдержку ({success_count}/{total_attempts} попыток успешно)")
+
+
+# Функция для тестирования уведомлений техподдержки
+def test_support_notifications():
+    """
+    Тестовая функция для проверки работы уведомлений техподдержки
+    """
+    test_message = (
+        f"🧪 <b>ТЕСТ УВЕДОМЛЕНИЙ</b>\n\n"
+        f"⏰ <b>Время:</b> {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}\n"
+        f"✅ <b>Статус:</b> Система уведомлений работает\n"
+        f"🔧 <b>Тип:</b> Тестовое сообщение"
+    )
+    
+    logging.info("🧪 Запуск теста уведомлений техподдержки...")
+    send_to_support(test_message)
 
 
 # Функция для получения баланса TON кошелька
@@ -735,6 +774,41 @@ def create_referral_keyboard():
         InlineKeyboardButton(f"{EMOJIS['back']} Назад", callback_data="back_main")
     )
     return keyboard
+
+# Обработчик команды /test_notifications (только для админов)
+@bot.message_handler(commands=['test_notifications'])
+def test_notifications_command(message: Message):
+    """
+    Команда для тестирования уведомлений техподдержки (только для админов)
+    """
+    user_id = str(message.from_user.id)
+    
+    # Проверяем, является ли пользователь админом (по chat_id или username)
+    admin_ids = [str(SUPPORT_CHAT_ID), "339294188"]  # Добавьте свои admin ID
+    admin_usernames = ["StarShopsup"]  # Добавьте свои admin usernames
+    
+    is_admin = (user_id in admin_ids or 
+                message.from_user.username in admin_usernames)
+    
+    if not is_admin:
+        bot.reply_to(message, "❌ У вас нет прав для выполнения этой команды.")
+        return
+    
+    try:
+        # Запускаем тест уведомлений
+        test_support_notifications()
+        
+        # Отправляем подтверждение администратору
+        bot.reply_to(message, 
+                     "🧪 Тест уведомлений запущен!\n"
+                     "Проверьте каналы техподдержки на наличие тестового сообщения.")
+        
+        logging.info(f"🧪 Тест уведомлений запущен администратором: {message.from_user.username} ({user_id})")
+        
+    except Exception as e:
+        bot.reply_to(message, f"❌ Ошибка при запуске теста: {e}")
+        logging.error(f"❌ Ошибка при запуске теста уведомлений: {e}")
+
 
 # Обработчик команды /start
 @bot.message_handler(commands=['start'])
